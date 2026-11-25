@@ -353,7 +353,7 @@ function loopBuf(c, kind) {
 // Fond sonore des séances : vagues (bruit rose filtré qui monte et descend lentement) + battements binauraux graves.
 let AMB = null;
 const AMB_MODE = () => S.settings.amb || 'vb';
-const WAVE_G = () => 0.5 * S.settings.binVol, TONE_G = () => 0.1 * S.settings.binVol;
+const WAVE_G = () => 0.375 * S.settings.binVol, TONE_G = () => 0.1 * S.settings.binVol, SWELL = 0.1;
 function setBin(hz) {
   const c = ac(); if (!c) return;
   if (!hz || AMB_MODE() === 'none') { ambStop(); return; }
@@ -367,13 +367,14 @@ function setBin(hz) {
 }
 function ambGraph(c, dest, hz) {
   {
-    const out = c.createGain(); out.gain.value = 0; out.connect(dest);
+    const duck = c.createGain(); duck.gain.value = 1; duck.connect(dest);
+    const out = c.createGain(); out.gain.value = 0; out.connect(duck);
     const src = c.createBufferSource(); src.buffer = loopBuf(c, 'pink'); src.loop = true;
-    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 650; lp.Q.value = 0.4;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 0.4;
     const wg = c.createGain(); wg.gain.value = WAVE_G();
     src.connect(lp).connect(wg).connect(out); src.start();
-    const l1 = c.createOscillator(); l1.frequency.value = 0.07; const d1 = c.createGain(); d1.gain.value = 380; l1.connect(d1).connect(lp.frequency); l1.start();
-    const l2 = c.createOscillator(); l2.frequency.value = 0.07; const d2 = c.createGain(); d2.gain.value = WAVE_G() * 0.35; l2.connect(d2).connect(wg.gain); l2.start();
+    const l1 = c.createOscillator(); l1.frequency.value = 0.07; const d1 = c.createGain(); d1.gain.value = 150; l1.connect(d1).connect(lp.frequency); l1.start();
+    const l2 = c.createOscillator(); l2.frequency.value = 0.07; const d2 = c.createGain(); d2.gain.value = WAVE_G() * SWELL; l2.connect(d2).connect(wg.gain); l2.start();
     const tg = c.createGain(); tg.gain.value = AMB_MODE() === 'vb' ? TONE_G() : 0; tg.connect(out);
     const m = c.createChannelMerger(2); m.connect(tg);
     const osc = [];
@@ -381,10 +382,18 @@ function ambGraph(c, dest, hz) {
       const o = c.createOscillator(); o.frequency.value = car + (side ? hz / 2 : -hz / 2);
       const g = c.createGain(); g.gain.value = amp; o.connect(g).connect(m, 0, side); o.start(); osc.push({ o, car, side });
     }
-    return { out, src, wg, tg, d2, osc, lfo: [l1, l2], hz };
+    return { duck, out, src, wg, tg, d2, osc, lfo: [l1, l2], hz };
   }
 }
-window.__ambGraph = ambGraph;
+// Le fond s'efface d'environ 4 dB pendant que la voix parle, puis remonte doucement.
+function duckAmb(a, t0, dur) {
+  if (!a || !a.duck) return;
+  const g = a.duck.gain;
+  g.cancelScheduledValues(t0);
+  g.setTargetAtTime(0.63, Math.max(0, t0 - 0.2), 0.12);
+  g.setTargetAtTime(1, t0 + dur + 0.25, 0.7);
+}
+window.__ambGraph = ambGraph; window.__duckAmb = duckAmb;
 function ambStop() {
   if (!AMB || !AC) return;
   const a = AMB; AMB = null;
@@ -394,7 +403,7 @@ function ambStop() {
 function binLevel() {
   if (!AMB || !AC) return;
   const t = AC.currentTime;
-  AMB.wg.gain.setTargetAtTime(WAVE_G(), t, 0.2); AMB.d2.gain.setTargetAtTime(WAVE_G() * 0.35, t, 0.2);
+  AMB.wg.gain.setTargetAtTime(WAVE_G(), t, 0.2); AMB.d2.gain.setTargetAtTime(WAVE_G() * SWELL, t, 0.2);
   AMB.tg.gain.setTargetAtTime(AMB_MODE() === 'vb' ? TONE_G() : 0, t, 0.2);
 }
 function setNoise(on) {
@@ -503,6 +512,7 @@ function sayVox(t) {
     const src = AC.createBufferSource(); src.buffer = buf; src.connect(VG);
     const at = Math.max(AC.currentTime + 0.03, VOX.endAt);
     src.start(at); VOX.endAt = at + buf.duration;
+    duckAmb(AMB, at, buf.duration);
     VOX.live.add(src); src.onended = () => VOX.live.delete(src);
     return;
   }
