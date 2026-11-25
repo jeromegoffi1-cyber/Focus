@@ -2,7 +2,9 @@
 
 Entraînement quotidien de la concentration et de la visualisation : la flamme, le point fixe, les respirations, les objectifs vécus comme atteints, le corps, la journée idéale, la diète mentale, la canalisation de l'énergie, et un bouton « Je décroche » pour les moments de procrastination.
 
-Tout tient dans `index.html`. Les autres fichiers servent à l'installer sur le téléphone et à l'utiliser hors connexion.
+L'appli tient dans `index.html`. Les autres fichiers servent à l'installer sur le téléphone et à l'utiliser hors connexion.
+`audio/` contient la voix du guide (Damien, ElevenLabs), une phrase par fichier, et `audio/index.json` la liste des phrases enregistrées.
+Si un texte de l'appli change, relancer `outils/gen_voix.py` (mode d'emploi en tête du script) pour réenregistrer les phrases nouvelles.
 Les données restent dans le navigateur du téléphone (export possible dans Réglages).
 
 ## Mettre en ligne sur GitHub Pages
