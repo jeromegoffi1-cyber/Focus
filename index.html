@@ -109,6 +109,15 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 svg.chart{width:100%;height:auto;display:block;margin-top:10px;overflow:visible}
 .hbar{display:grid;grid-template-columns:118px 1fr 26px;align-items:center;gap:8px;font-size:13px;margin:7px 0}
 .hbar .t{height:8px;border-radius:8px;background:#1a202b;overflow:hidden}.hbar .t i{display:block;height:100%;background:var(--acc);border-radius:8px}
+.jday{padding:14px 0;border-bottom:1px solid var(--line)}
+.jday:last-of-type{border-bottom:0}
+.jday b{font-weight:600}
+.jchips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 4px}
+.jchips span{font-size:12px;padding:4px 9px;border-radius:999px;background:#0b0e14;border:1px solid var(--line);color:var(--soft)}
+.jrow{display:grid;grid-template-columns:112px 1fr;gap:10px;font-size:13.5px;margin-top:6px}
+.jrow span{color:var(--dim)}
+.jrow div{color:var(--ink)}
+.jnote{margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,178,74,.07);border:1px solid rgba(255,178,74,.2);font-size:14px;white-space:pre-wrap}
 .hist{font-size:13.5px;padding:9px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
 .hist:last-child{border-bottom:0}
 .note{font-size:13.5px;color:var(--soft);padding:10px 0;border-bottom:1px solid var(--line)}
@@ -179,7 +188,6 @@ nav.tabs svg{width:22px;height:22px}
 <body>
 <div class="wrap"><main id="view"></main></div>
 
-<button class="fab" data-act="sos" aria-label="Je décroche"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".6" fill="currentColor"/></svg>Je décroche</button>
 
 <nav class="tabs"><div class="in2">
   <button data-t="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 2.8c1.2 3.6 5.2 5.6 5.2 10.4a5.2 5.2 0 0 1-10.4 0c0-2.2 1.1-3.8 2.3-4.9.2 1.7 1 2.8 2.1 3.2-.4-3.2-.4-5.9.8-8.7z"/></svg>Aujourd'hui</button>
@@ -253,6 +261,7 @@ const DEF = () => ({
   history: [],
   drifts: [],
   journal: [],
+  events: [],
   energy: []
 });
 function merge(a, b) {
@@ -956,7 +965,7 @@ const CATS = [
   ['Image mentale', ['image']],
   ['Visualisation', ['endormi', 'objectif', 'corps', 'journee', 'futur', 'bulle', 'ancre']],
   ['Le soir', ['revue', 'revision']],
-  ['Recentrage', ['sos', 'energie', 'sprint']]
+  ['Recentrage', ['energie', 'sprint']]
 ];
 
 /* ---------- planification des consignes ---------- */
@@ -1098,7 +1107,7 @@ function finish(aborted) {
   let focusTaps = 0, focusSecs = 0;
   for (const s of res.steps) if (['point', 'flame', 'count', 'pursuit', 'sospoint'].includes(s.kind)) { focusTaps += s.taps; focusSecs += s.dur; }
   if (!aborted || secs >= 60) {
-    S.history.push({ id: uid(), ts: Date.now(), date: dkey(), name: P.sess.title, type: P.sess.type || 'exo', secs, done: !aborted,
+    S.history.push({ id: uid(), ts: Date.now(), date: dkey(), name: P.sess.title, type: P.sess.type || 'exo', day: P.sess.day || null, secs, done: !aborted,
       steps: res.steps.filter(s => s.kind !== 'breath').map(s => ({ k: s.kind, l: s.lvl, d: Math.round(s.dur), t: s.taps, ok: s.done, v: s.val })) });
     if (!aborted) {
       msgs.push(...judge(res));
@@ -1148,7 +1157,7 @@ function judge(res) {
     const tpm = a.taps / Math.max(a.dur / 60, 0.5), thr = THR(k, L);
     if (tpm <= thr) {
       S.wins[k]++;
-      if (S.wins[k] >= 3 && L < MAXL[k]) { S.levels[k]++; S.wins[k] = 0; out.push(`${name} : palier ${L + 1} débloqué (${levelLabel(k, L + 1)}).`); }
+      if (S.wins[k] >= 3 && L < MAXL[k]) { S.levels[k]++; S.wins[k] = 0; out.push(`${name} : palier ${L + 1} débloqué (${levelLabel(k, L + 1)}).`); S.events.push({ date: dkey(), t: out[out.length - 1] }); }
       else out.push(`${name}, palier ${L} : ${Math.min(S.wins[k], 3)} réussite${S.wins[k] > 1 ? 's' : ''} sur 3.`);
     } else out.push(`${name} : ${fmt1(tpm)} décrochage${tpm >= 2 ? 's' : ''} par minute. Pour valider le palier ${L}, il en faut ${fmt1(thr)} ou moins.`);
   }
@@ -1156,7 +1165,7 @@ function judge(res) {
     if (s.kind !== 'image' || s.val == null || s.lvl !== S.levels.image) continue;
     if (s.val >= 7) {
       S.wins.image++;
-      if (S.wins.image >= 3 && S.levels.image < MAXL.image) { S.levels.image++; S.wins.image = 0; out.push(`Image mentale : palier ${S.levels.image} débloqué (${IMG[S.levels.image - 1].n.toLowerCase()}).`); }
+      if (S.wins.image >= 3 && S.levels.image < MAXL.image) { S.levels.image++; S.wins.image = 0; out.push(`Image mentale : palier ${S.levels.image} débloqué (${IMG[S.levels.image - 1].n.toLowerCase()}).`); S.events.push({ date: dkey(), t: out[out.length - 1] }); }
       else out.push(`Image mentale, palier ${S.levels.image} : ${Math.min(S.wins.image, 3)} réussite${S.wins.image > 1 ? 's' : ''} sur 3.`);
     } else out.push(`Image mentale : netteté ${s.val} sur 10. Il faut 7 pour valider le palier.`);
   }
@@ -1458,7 +1467,6 @@ function go(t) { TAB = t; render(); window.scrollTo(0, 0); }
 function render() {
   $('#view').innerHTML = VIEWS[TAB]();
   $$('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === TAB));
-  $('.fab').style.display = TAB === 'home' || TAB === 'vision' ? 'none' : '';
 }
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2400); }
 function openSheet(html) { $('#sheet').innerHTML = '<div class="sheet-top"><button class="sheet-x" data-act="close-sheet" aria-label="Fermer">✕</button></div>' + html; $('#sheet').scrollTop = 0; $('#sheet').classList.add('on'); $('#sheetBg').classList.add('on'); }
@@ -1598,6 +1606,10 @@ const VIEWS = {
       <div class="heat">${heat.map(m => `<i style="background:${hcol(m)}" title="${Math.round(m)} min"></i>`).join('')}</div>
       <p class="small dim" style="margin-bottom:0">Les 8 dernières semaines, une case par jour.</p>
     </section>
+    <section class="card" id="journal">
+      <div class="between"><h3>Journal</h3><span class="small dim">jour par jour</span></div>
+      ${journalHtml()}
+    </section>
     <section class="card">
       <h3>Décrochages par minute</h3>
       <p class="small dim">Point fixe, séances complètes. Plus c'est bas, mieux tu tiens.</p>
@@ -1632,16 +1644,7 @@ const VIEWS = {
         <div class="kpi"><b>${Object.values(S.days).filter(x => x.held === 'Tenue').length}</b><span>journées tenues</span></div>
       </div>
     </section>
-    <section class="card">
-      <h3>Carnet</h3>
-      ${S.journal.length ? S.journal.slice(-12).reverse().map(j => `<div class="note"><div class="dim">${esc(j.kind)} · ${dateShort(j.date)}</div>${esc(j.text)}</div>`).join('')
-        : '<p class="small dim">Les réponses du futur soi et les révisions du soir s\'afficheront ici.</p>'}
-    </section>
-    <section class="card">
-      <h3>Dernières séances</h3>
-      ${S.history.length ? S.history.slice(-12).reverse().map(e => `<div class="hist"><span>${esc(e.name)}${e.done ? '' : ' <span class="dim">(interrompue)</span>'}</span><span class="dim">${dateShort(e.date)} · ${mmss(e.secs)}</span></div>`).join('')
-        : '<p class="small dim">Rien pour l\'instant.</p>'}
-    </section>`;
+`;
   },
 
   settings() {
@@ -1708,6 +1711,54 @@ function energyCard() {
     </div>
     ${E.filter(e => e.action).slice(-5).reverse().map(e => `<div class="note"><div class="dim">${dateShort(e.date)} · ${e.h} h</div>${esc(e.action)}</div>`).join('')}
   </section>`;
+}
+let JLIM = 7;
+const dateDay = k => cap(new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(k + 'T12:00')));
+function journalDates() {
+  const set = new Set();
+  for (const e of S.history) if (e.secs >= 30) set.add(e.date);
+  for (const k in S.days) { const d = S.days[k]; if (d.caught || d.intention || d.score != null || d.held || d.worked || d.drift || d.note || (d.actions && d.actions.length)) set.add(k); }
+  for (const x of [...S.drifts, ...(S.energy || []), ...S.journal, ...(S.events || [])]) set.add(x.date);
+  return [...set].filter(k => k <= dkey()).sort().reverse();
+}
+function journalHtml() {
+  const dates = journalDates();
+  if (!dates.length) return '<p class="small dim">Chaque jour où tu pratiques, tu retrouveras ici ce que tu as fait, tes notes, ta concentration, la diète mentale, tes dérives et tes commentaires.</p>';
+  const row = (l, v) => v ? `<div class="jrow"><span>${l}</span><div>${esc(v)}</div></div>` : '';
+  const out = dates.slice(0, JLIM).map(k => {
+    const d = S.days[k] || {}, H = S.history.filter(e => e.date === k);
+    const mins = Math.round(H.reduce((a, e) => a + e.secs, 0) / 60);
+    const daily = H.find(e => e.type === 'daily' && e.done);
+    const pts = H.flatMap(e => (e.steps || []).filter(x => x.k === 'point' && x.ok));
+    const tpm = pts.length ? pts.reduce((a, x) => a + x.t, 0) / Math.max(pts.reduce((a, x) => a + x.d, 0) / 60, 0.5) : null;
+    const chips = [
+      mins ? `${mins} min de pratique` : '',
+      daily ? `Séance du jour${daily.day ? ' · jour ' + daily.day : ''}` : '',
+      d.score != null ? `Concentration ${d.score}/10` : '',
+      tpm != null ? `Point : ${fmt1(tpm)} décrochage${tpm >= 2 ? 's' : ''}/min` : '',
+      d.held ? `Diète ${d.held.toLowerCase()}` : '',
+      d.caught ? `${d.caught} pensée${d.caught > 1 ? 's' : ''} rattrapée${d.caught > 1 ? 's' : ''}` : ''
+    ].filter(Boolean);
+    const dr = S.drifts.filter(x => x.date === k), en = (S.energy || []).filter(x => x.date === k);
+    const notes = S.journal.filter(x => x.date === k), ev = (S.events || []).filter(x => x.date === k);
+    const others = H.filter(e => e.type !== 'daily').map(e => `${e.name} (${mmss(e.secs)})${e.done ? '' : ', interrompue'}`);
+    return `<div class="jday">
+      <div class="between"><b>${dateDay(k)}</b>${k === dkey() ? '<span class="small acc">aujourd\'hui</span>' : ''}</div>
+      ${chips.length ? `<div class="jchips">${chips.map(c => `<span>${esc(c)}</span>`).join('')}</div>` : ''}
+      ${row('Intention', d.intention)}${row('Première action', d.when)}
+      ${(d.actions || []).length ? row('Pour mes objectifs', d.actions.map(a => a.text).join(' · ')) : ''}
+      ${row('Ce qui a marché', d.worked)}${row('Dérive', d.drift)}
+      ${notes.map(n => row(n.kind, n.text)).join('')}
+      ${dr.length ? row('Recentrages', dr.map(x => `${x.trigger.toLowerCase()} (${x.h} h)${x.action ? ' → ' + x.action : ''}`).join(' · ')) : ''}
+      ${en.length ? row('Énergie canalisée', en.map(x => `${x.before} → ${x.after ?? '?'}${x.action ? ', ' + x.action : ''}`).join(' · ')) : ''}
+      ${ev.length ? row('Progrès', ev.map(x => x.t).join(' ')) : ''}
+      ${others.length ? row('Exercices', others.join(' · ')) : ''}
+      ${row('Demain', d.tomorrow)}
+      ${d.note ? `<div class="jnote">${esc(d.note)}</div>` : ''}
+      <button class="btn sm ghost" style="padding:6px 0;margin-top:4px" data-act="note-edit" data-d="${k}">${d.note ? 'Modifier mon commentaire' : 'Ajouter un commentaire'}</button>
+    </div>`;
+  }).join('');
+  return out + (dates.length > JLIM ? `<button class="btn sm block" style="margin-top:12px" data-act="journal-more">Voir les jours précédents (${dates.length - JLIM})</button>` : '');
 }
 function exDur(id) {
   const e = EX[id];
@@ -1828,6 +1879,20 @@ document.addEventListener('click', e => {
       <p class="muted">Le soir, tu indiques si la journée est tenue. Si tu t'es laissé aller à ruminer longtemps, elle est lâchée et le défi repart de zéro. Fox était strict là-dessus, c'est ce qui fait la force de l'exercice.</p>
       <button class="btn block" style="margin-top:12px" data-act="close-sheet">Compris</button>`); break;
     case 'close-sheet': closeSheet(); break;
+    case 'journal-more': JLIM += 14; render(); break;
+    case 'note-edit': {
+      const k = el.dataset.d;
+      openSheet(`<h2>${esc(dateDay(k))}</h2><label class="f">Mon commentaire sur cette journée</label>
+        <textarea class="in" id="noteIn" rows="6" placeholder="Ce qui s'est passé, ce que tu as ressenti, ce que tu retiens">${esc((S.days[k] || {}).note || '')}</textarea>
+        <div class="row" style="margin-top:16px"><button class="btn ghost" style="flex:1" data-act="close-sheet">Annuler</button><button class="btn pri" style="flex:2" data-act="note-save" data-d="${k}">Enregistrer</button></div>`);
+      setTimeout(() => { const t = $('#noteIn'); if (t) t.focus(); }, 350);
+      break;
+    }
+    case 'note-save': {
+      const k = el.dataset.d, v = ($('#noteIn') || {}).value || '';
+      D(k).note = v.trim(); save(); closeSheet();
+      const y = window.scrollY; render(); window.scrollTo(0, y); toast('Commentaire enregistré'); break;
+    }
     case 'vision-save': { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); clearTimeout(saveT); S.savedAt = hhmm(); save(); const el = $('#saveState'); if (el) el.textContent = 'Enregistrée à ' + S.savedAt; toast('Vision enregistrée'); break; }
     case 'vox-offline': {
       ac(); toast('Téléchargement des voix…');
