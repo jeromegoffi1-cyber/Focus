@@ -393,7 +393,7 @@ function duckAmb(a, t0, dur) {
   g.setTargetAtTime(0.63, Math.max(0, t0 - 0.2), 0.12);
   g.setTargetAtTime(1, t0 + dur + 0.25, 0.7);
 }
-window.__ambGraph = ambGraph; window.__duckAmb = duckAmb;
+window.__ambGraph = ambGraph; window.__duckAmb = duckAmb; window.__amb = () => (AMB ? AMB.hz : 0);
 function ambStop() {
   if (!AMB || !AC) return;
   const a = AMB; AMB = null;
@@ -516,7 +516,7 @@ function sayVox(t) {
     VOX.live.add(src); src.onended = () => VOX.live.delete(src);
     return;
   }
-  if (S.settings.ttsFallback) speak(t);
+  if (S.settings.ttsFallback) { speak(t); if (AC && AMB && VOICE) duckAmb(AMB, AC.currentTime, est(t)); }
 }
 function stopVox() { for (const x of VOX.live) { try { x.stop(); } catch (e) {} } VOX.live.clear(); VOX.endAt = 0; hush(); }
 function audioSession() { try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {} }
@@ -841,7 +841,7 @@ const TRIG = [
   { l: 'Autre chose', tip: 'Choisis une seule chose, la plus petite possible.' }
 ];
 function sprintSteps(min, task, sound) {
-  return [{ vis: 'sprint', title: 'Sprint', kind: 'sprint', dur: min * 60, tap: true, count: true, task: task || '', sound: sound || 'aucun', lead: 0.5,
+  return [{ vis: 'sprint', title: 'Sprint', kind: 'sprint', dur: min * 60, tap: true, count: true, task: task || '', sound: sound || 'vagues', lead: 0.5,
     cues: [{ t: `Sprint de ${min} minutes. Une seule tâche. Si une envie de décrocher arrive, touche l'écran et reste.` }] },
     { type: 'rate', key: 'sprintq', prompt: 'Qualité de ce sprint, de 1 à 10 ?', say: 'Sprint terminé.' }];
 }
@@ -854,7 +854,7 @@ function sosSteps() {
     { vis: 'orb', title: "L'ancre", when: () => S.anchor, cues: [{ t: 'Serre ton pouce contre ton index, et retrouve la sensation de ton moment de concentration.', p: 4 }], tail: 1 },
     { type: 'input', key: 'action', prompt: 'La prochaine action, faisable en deux minutes', ph: 'Ex. : écrire le titre et les trois parties du mail', tip: r => (TRIG.find(t => t.l === r.trigger) || TRIG[TRIG.length - 1]).tip, save: (v, r) => { r.action = v; } },
     { type: 'choice', key: 'sprint', prompt: 'On lance un sprint ?', options: ['10 minutes', '25 minutes', '45 minutes', "Non, j'y vais"],
-      save: (v, r) => { r.sprint = v; const m = parseInt(v, 10); if (m) return sprintSteps(m, r.action, 'aucun'); } }
+      save: (v, r) => { r.sprint = v; const m = parseInt(v, 10); if (m) return sprintSteps(m, r.action, 'vagues'); } }
   ].map(st => { const w = st.when; return Object.assign({}, st, { when: r => !r.energy && (!w || w(r)) }); });
   return [
     { type: 'choice', key: 'trigger', prompt: "Qu'est-ce qui se passe ?", sub: 'Nommer la cause aide déjà à reprendre la main.', options: TRIG.map(t => t.l),
@@ -892,7 +892,7 @@ function energieSteps() {
       { t: 'Ouvre les yeux. Elle est là, sers-t\'en tout de suite.', p: 1 }], tail: 1 },
     { type: 'input', key: 'action', prompt: 'Sur quoi tu la mets, maintenant ?', ph: 'Ex. : 45 minutes sur le plan de lancement', chips, save: (v, r) => { r.action = v; } },
     { type: 'choice', key: 'sprint', prompt: 'On lance un sprint ?', options: ['25 minutes', '45 minutes', "Non, j'y vais"],
-      save: (v, r) => { r.sprint = v; const m = parseInt(v, 10); if (m) return sprintSteps(m, r.action, 'aucun'); } }
+      save: (v, r) => { r.sprint = v; const m = parseInt(v, 10); if (m) return sprintSteps(m, r.action, 'vagues'); } }
   ];
 }
 function reviewSteps() {
@@ -1081,6 +1081,7 @@ async function startSession(sess) {
   bell('soft');
   if (!S.seen.casque && AMB_MODE() === 'vb') { S.seen.casque = true; save(); toast('Casque ou écouteurs conseillés'); }
   P.listen = 0; P.lastTick = 0;
+  setBin(10);
   clearInterval(P.tick); P.tick = setInterval(tick, 200);
   next();
 }
@@ -1112,8 +1113,9 @@ function enterStep(i, off) {
     const prev = P.cues[P.ci - 1]; if (prev) showCue(prev.t);
   }
   P.stepStart = clock() - off * 1000 / SPEED; P.lastTick = performance.now();
-  if (s.sound === 'bruit brun') setNoise(true); else setNoise(false);
-  setBin(s.sound === 'binaural' ? 16 : s.vis === 'sprint' ? null : (s.bin || 10));
+  const snd = s.vis === 'sprint' ? (s.sound === 'aucun' || s.sound === 'bruit brun' ? s.sound : 'vagues') : 'vagues';
+  setNoise(snd === 'bruit brun');
+  setBin(snd === 'vagues' ? (s.vis === 'sprint' ? 14 : (s.bin || 10)) : null);
   if (!off && i > 0 && s.bell !== false && (s.bell || steps[i - 1].vis === 'dark' || steps[i - 1].type)) bell('soft');
   P.tl = timeline(); drawTicks(); hud(off);
 }
@@ -1973,7 +1975,7 @@ function setPath(p, v) { const ks = p.split('.'); let o = S; for (let i = 0; i <
 const SH = { opts: {} };
 function exSheet(id) {
   const e = EX[id];
-  SH.id = id; SH.opts = { min: e.def, goal: (S.goals.find(g => !g.done) || {}).id || null, task: '', sound: 'aucun' };
+  SH.id = id; SH.opts = { min: e.def, goal: (S.goals.find(g => !g.done) || {}).id || null, task: '', sound: 'vagues' };
   if (id === 'sprint') SH.opts.min = 25;
   renderExSheet();
 }
@@ -1994,7 +1996,7 @@ function renderExSheet() {
   if (e.opt === 'sprint') {
     opts = `<label class="f">Durée</label><div class="chips">${[10, 25, 45, 60].map(m => `<button class="chip ${o.min === m ? 'on' : ''}" data-act="opt" data-k="min" data-v="${m}">${m} min</button>`).join('')}</div>
       <label class="f">La tâche</label><input class="in" id="sprintTask" placeholder="Ex. : rédiger la note de synthèse" value="${esc(o.task)}">
-      <label class="f">Fond sonore</label><div class="chips">${['aucun', 'bruit brun', 'binaural'].map(s => `<button class="chip ${o.sound === s ? 'on' : ''}" data-act="opt" data-k="sound" data-v="${s}">${cap(s)}</button>`).join('')}</div>`;
+      <label class="f">Fond sonore</label><div class="chips">${['vagues', 'bruit brun', 'aucun'].map(s => `<button class="chip ${o.sound === s ? 'on' : ''}" data-act="opt" data-k="sound" data-v="${s}">${cap(s)}</button>`).join('')}</div>`;
   }
   openSheet(`<div class="row" style="gap:12px"><div class="ic" style="flex:0 0 44px;height:44px;border-radius:12px;background:var(--accbg);display:grid;place-items:center;color:var(--acc)">${IC[e.ic].replace('<svg', '<svg width="22" height="22"')}</div><h2>${esc(e.n)}</h2></div>
     <p class="muted" style="margin-top:12px">${esc(e.info)}</p>${opts}
