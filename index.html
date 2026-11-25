@@ -365,16 +365,21 @@ function setNoise(on) {
 const HAS_TTS = 'speechSynthesis' in window;
 let VOICE = null;
 function frVoices() { return HAS_TTS ? speechSynthesis.getVoices().filter(v => /^fr/i.test(v.lang)) : []; }
+// Voix du téléphone en secours : uniquement des voix d'homme connues, jamais une voix de femme par défaut.
+const MALE = /\b(Thomas|Nicolas|Daniel|Henri|Jacques|Eddy|Reed|Rocko|Grandpa|Paul|Mathieu|Antoine|Guillaume|Claude|Jean|Yannick|Vincent|Rémi|Remy|Fred|Gilles|Olivier|Male|Homme|Masculin)\b/i;
+const isMale = v => MALE.test(v.name) || /fr-fr-x-(frb|frd)/i.test(v.voiceURI || '');
 function pickVoice() {
   const vs = frVoices();
   VOICE = vs.find(v => v.voiceURI === S.settings.voiceURI)
-    || vs.find(v => /fr[-_]FR/i.test(v.lang) && /(Thomas|Amélie|Audrey|Aurélie|Denise|Henri|Google)/i.test(v.name))
-    || vs.find(v => /fr[-_]FR/i.test(v.lang)) || vs[0] || null;
+    || vs.find(v => /fr[-_]FR/i.test(v.lang) && /Thomas/i.test(v.name) && /(améliorée|enhanced|premium)/i.test(v.name))
+    || vs.find(v => /fr[-_]FR/i.test(v.lang) && isMale(v))
+    || vs.find(v => isMale(v)) || null;
 }
 if (HAS_TTS) { pickVoice(); speechSynthesis.onvoiceschanged = () => { pickVoice(); if (TAB === 'settings' && !$('#player').classList.contains('on')) render(); }; }
 function speak(t, force) {
   if (!HAS_TTS || !t || SPEED > 1 || (!S.settings.voice && !force)) return;
   if (!VOICE) pickVoice();
+  if (!VOICE) return;
   const u = new SpeechSynthesisUtterance(t);
   u.lang = 'fr-FR'; if (VOICE) u.voice = VOICE;
   u.rate = S.settings.rate; u.pitch = 0.95;
@@ -1545,6 +1550,7 @@ const VIEWS = {
     const goals = S.goals.slice().sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0));
     return `<header class="hd"><div><div class="eyebrow">Ce que je construis</div><h1>Vision</h1></div></header>
     <p class="small muted">Ce que tu écris ici reste sur ton téléphone. Les visualisations te le lisent pendant les séances : écris des phrases courtes, avec des détails que tu peux voir, entendre, sentir.</p>
+    ${S.settings.elKey ? '' : `<div class="tip" style="margin-top:12px">Pour que ces phrases soient lues par la voix du guide, ajoute ta clé ElevenLabs dans Réglages, rubrique « Tes phrases personnelles ». Sans elle, elles sont lues par la voix d'homme du téléphone, ou seulement affichées.</div>`}
     <section class="card">
       <h3>Mon affirmation</h3>
       <p class="small dim">Une phrase au présent, à la première personne. Elle ouvre chaque séance du jour.</p>
@@ -1660,7 +1666,8 @@ const VIEWS = {
         <input class="in" type="password" autocomplete="off" data-set="elKey" placeholder="Clé API ElevenLabs" value="${esc(st.elKey)}" style="margin-top:10px"></div>
       ${sw('ttsFallback', 'Voix du téléphone en secours', 'Pour les phrases qui n\'ont pas d\'enregistrement.')}
       ${HAS_TTS ? `<div class="set" style="display:block"><div class="l"><b>Voix de secours</b></div>
-        <select class="in" data-set="voiceURI" style="margin-top:8px">${vs.length ? vs.map(v => `<option value="${esc(v.voiceURI)}" ${VOICE && VOICE.voiceURI === v.voiceURI ? 'selected' : ''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('') : '<option>Voix par défaut</option>'}</select></div>` : ''}
+        <select class="in" data-set="voiceURI" style="margin-top:8px">${VOICE ? '' : '<option value="" selected>Aucune voix d\'homme trouvée : texte à l\'écran seulement</option>'}${vs.map(v => `<option value="${esc(v.voiceURI)}" ${VOICE && VOICE.voiceURI === v.voiceURI ? 'selected' : ''}>${esc(v.name)} (${esc(v.lang)})${isMale(v) ? '' : ' · voix de femme ?'}</option>`).join('')}</select>
+        <p class="small dim" style="margin-bottom:0">Par défaut, seule une voix d'homme du téléphone est utilisée (Thomas sur iPhone). Si aucune n'est installée, tes phrases s'affichent à l'écran sans être lues.</p></div>` : ''}
       ${sw('text', 'Afficher les consignes', 'Le texte apparaît aussi à l\'écran pendant la séance.')}
     </section>
     <section class="card">
