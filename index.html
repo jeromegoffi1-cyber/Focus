@@ -254,7 +254,7 @@ const DEF = () => ({
   v: 1,
   created: dkey(),
   seen: { welcome: false, casque: false },
-  settings: { voice: true, voiceURI: '', rate: 0.95, bells: true, binaural: true, binVol: 0.5, text: true, realCandle: false, elKey: '', ttsFallback: true },
+  settings: { voice: true, voiceURI: '', rate: 0.95, bells: true, binaural: true, amb: 'vb', binVol: 0.5, text: true, realCandle: false, elKey: '', ttsFallback: true },
   levels: { point: 1, flame: 1, image: 1 },
   wins: { point: 0, flame: 0, image: 0 },
   program: { day: 1, last: null },
@@ -325,51 +325,77 @@ function bell(kind = 'soft', force) {
   ring(0);
   if (kind === 'end') { ring(2.4); ring(4.8); }
 }
-let bed = null, NB = null;
-function noiseBuf(c) {
-  if (NB) return NB;
-  const len = c.sampleRate * 6, buf = c.createBuffer(2, len, c.sampleRate), F = 4000;
+// Boucles de bruit sans coupure : la fin de la boucle se fond dans son début (fondu à puissance constante).
+const LOOPS = {};
+function loopBuf(c, kind) {
+  if (LOOPS[kind]) return LOOPS[kind];
+  const sr = c.sampleRate, N = Math.floor(sr * 12), X = Math.floor(sr * 1.5), buf = c.createBuffer(2, N, sr);
   for (let ch = 0; ch < 2; ch++) {
-    const d = buf.getChannelData(ch); let last = 0;
-    for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5; }
-    for (let i = 0; i < F; i++) { d[i] *= i / F; d[len - 1 - i] *= i / F; }
+    const n = new Float32Array(N + X);
+    if (kind === 'pink') {
+      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+      for (let i = 0; i < N + X; i++) {
+        const w = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852;
+        b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
+        n[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11; b6 = w * 0.115926;
+      }
+    } else {
+      let last = 0;
+      for (let i = 0; i < N + X; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; n[i] = last * 3.5; }
+    }
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < N; i++) d[i] = n[i];
+    for (let i = 0; i < X; i++) { const a = i / X; d[i] = n[i] * Math.sqrt(a) + n[N + i] * Math.sqrt(1 - a); }
   }
-  return (NB = buf);
+  return (LOOPS[kind] = buf);
 }
-const BIN_G = () => 0.18 * S.settings.binVol, BED_G = () => 0.22 * S.settings.binVol;
+// Fond sonore des séances : vagues (bruit rose filtré qui monte et descend lentement) + battements binauraux graves.
+let AMB = null;
+const AMB_MODE = () => S.settings.amb || 'vb';
+const WAVE_G = () => 0.5 * S.settings.binVol, TONE_G = () => 0.1 * S.settings.binVol;
 function setBin(hz) {
   const c = ac(); if (!c) return;
-  const want = hz && S.settings.binaural;
-  if (!want) {
-    if (bin) { const b = bin; b.g.gain.setTargetAtTime(0, c.currentTime, 0.7); setTimeout(() => { try { b.l.stop(); b.r.stop(); } catch (e) {} }, 4000); bin = null; }
-    if (bed) { const n = bed; n.g.gain.setTargetAtTime(0, c.currentTime, 0.7); setTimeout(() => { try { n.s.stop(); } catch (e) {} }, 4000); bed = null; }
-    return;
-  }
-  const car = 180;
-  if (!bin) {
-    const l = c.createOscillator(), r = c.createOscillator(), m = c.createChannelMerger(2), g = c.createGain();
-    l.frequency.value = car - hz / 2; r.frequency.value = car + hz / 2;
-    l.connect(m, 0, 0); r.connect(m, 0, 1);
-    g.gain.value = 0; m.connect(g).connect(master); l.start(); r.start();
-    g.gain.setTargetAtTime(BIN_G(), c.currentTime, 1.2);
-    bin = { l, r, g, hz };
-  } else if (bin.hz !== hz) {
-    bin.l.frequency.setTargetAtTime(car - hz / 2, c.currentTime, 3);
-    bin.r.frequency.setTargetAtTime(car + hz / 2, c.currentTime, 3);
-    bin.hz = hz;
-  }
-  if (!bed) {
-    const src = c.createBufferSource(); src.buffer = noiseBuf(c); src.loop = true;
-    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700;
-    const g = c.createGain(); g.gain.value = 0; src.connect(lp).connect(g).connect(master); src.start();
-    g.gain.setTargetAtTime(BED_G(), c.currentTime, 1.5);
-    bed = { s: src, g };
+  if (!hz || AMB_MODE() === 'none') { ambStop(); return; }
+  if (!AMB) {
+    AMB = ambGraph(c, master, hz);
+    AMB.out.gain.setTargetAtTime(1, c.currentTime, 1.5);
+  } else if (AMB.hz !== hz) {
+    for (const x of AMB.osc) x.o.frequency.setTargetAtTime(x.car + (x.side ? hz / 2 : -hz / 2), c.currentTime, 4);
+    AMB.hz = hz;
   }
 }
+function ambGraph(c, dest, hz) {
+  {
+    const out = c.createGain(); out.gain.value = 0; out.connect(dest);
+    const src = c.createBufferSource(); src.buffer = loopBuf(c, 'pink'); src.loop = true;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 650; lp.Q.value = 0.4;
+    const wg = c.createGain(); wg.gain.value = WAVE_G();
+    src.connect(lp).connect(wg).connect(out); src.start();
+    const l1 = c.createOscillator(); l1.frequency.value = 0.07; const d1 = c.createGain(); d1.gain.value = 380; l1.connect(d1).connect(lp.frequency); l1.start();
+    const l2 = c.createOscillator(); l2.frequency.value = 0.07; const d2 = c.createGain(); d2.gain.value = WAVE_G() * 0.35; l2.connect(d2).connect(wg.gain); l2.start();
+    const tg = c.createGain(); tg.gain.value = AMB_MODE() === 'vb' ? TONE_G() : 0; tg.connect(out);
+    const m = c.createChannelMerger(2); m.connect(tg);
+    const osc = [];
+    for (const [car, amp] of [[110, 1], [220, 0.3]]) for (const side of [0, 1]) {
+      const o = c.createOscillator(); o.frequency.value = car + (side ? hz / 2 : -hz / 2);
+      const g = c.createGain(); g.gain.value = amp; o.connect(g).connect(m, 0, side); o.start(); osc.push({ o, car, side });
+    }
+    return { out, src, wg, tg, d2, osc, lfo: [l1, l2], hz };
+  }
+}
+window.__ambGraph = ambGraph;
+function ambStop() {
+  if (!AMB || !AC) return;
+  const a = AMB; AMB = null;
+  a.out.gain.setTargetAtTime(0, AC.currentTime, 0.8);
+  setTimeout(() => { try { a.src.stop(); a.lfo.forEach(l => l.stop()); a.osc.forEach(x => x.o.stop()); } catch (e) {} }, 5000);
+}
 function binLevel() {
-  if (!AC) return;
-  if (bin) bin.g.gain.setTargetAtTime(BIN_G(), AC.currentTime, 0.15);
-  if (bed) bed.g.gain.setTargetAtTime(BED_G(), AC.currentTime, 0.15);
+  if (!AMB || !AC) return;
+  const t = AC.currentTime;
+  AMB.wg.gain.setTargetAtTime(WAVE_G(), t, 0.2); AMB.d2.gain.setTargetAtTime(WAVE_G() * 0.35, t, 0.2);
+  AMB.tg.gain.setTargetAtTime(AMB_MODE() === 'vb' ? TONE_G() : 0, t, 0.2);
 }
 function setNoise(on) {
   const c = ac(); if (!c) return;
@@ -378,7 +404,7 @@ function setNoise(on) {
     return;
   }
   if (noise) return;
-  const s = c.createBufferSource(); s.buffer = noiseBuf(c); s.loop = true;
+  const s = c.createBufferSource(); s.buffer = loopBuf(c, 'brown'); s.loop = true;
   const g = c.createGain(); g.gain.value = 0; s.connect(g).connect(master); s.start();
   g.gain.setTargetAtTime(0.5 * S.settings.binVol, c.currentTime, 1);
   noise = { s, g };
@@ -1043,7 +1069,7 @@ async function startSession(sess) {
   $('#pForm').classList.remove('on'); $('#pForm').innerHTML = '';
   P.total = estimate(sess.steps);
   bell('soft');
-  if (!S.seen.casque && S.settings.binaural) { S.seen.casque = true; save(); toast('Casque ou écouteurs conseillés'); }
+  if (!S.seen.casque && AMB_MODE() === 'vb') { S.seen.casque = true; save(); toast('Casque ou écouteurs conseillés'); }
   P.listen = 0; P.lastTick = 0;
   clearInterval(P.tick); P.tick = setInterval(tick, 200);
   next();
@@ -1805,7 +1831,8 @@ const VIEWS = {
     <section class="card">
       <h3>Sons</h3>
       ${sw('bells', 'Cloches', 'Début, fin, et changement de phase quand tu as les yeux fermés.')}
-      ${sw('binaural', 'Battements binauraux', 'Avec un casque : un son légèrement différent dans chaque oreille, utilisé dans les séances les yeux fermés. Les études sur leur effet sont partagées ; beaucoup s\'en servent surtout comme repère pour entrer dans la séance.')}
+      <div class="set" style="display:block"><div class="l"><b>Fond sonore des séances</b><span>Des vagues lentes, avec ou sans battements binauraux graves dessous. Les binauraux demandent un casque : un son légèrement différent dans chaque oreille. Les études sur leur effet sont partagées ; beaucoup s'en servent surtout comme repère pour entrer dans la séance.</span></div>
+        <div class="chips">${[['vb', 'Vagues et binauraux'], ['v', 'Vagues seules'], ['none', 'Aucun']].map(([k, l]) => `<button class="chip ${AMB_MODE() === k ? 'on' : ''}" data-act="amb" data-v="${k}">${l}</button>`).join('')}</div></div>
       <div class="set" style="display:block"><div class="between"><b>Volume du fond sonore</b></div><input type="range" min="0.1" max="1" step="0.05" value="${st.binVol}" data-set="binVol"></div>
       <div class="set"><button class="btn sm" data-act="test-sound">Tester (casque)</button></div>
       <p class="small dim" style="margin-bottom:0">Le son suit le volume « média » du téléphone. Si tu n'entends rien, monte-le pendant la séance.</p>
@@ -2095,7 +2122,13 @@ document.addEventListener('click', e => {
       voxReady.then(() => loadClip(t)).then(b => { if (b) { const v = S.settings.voice; S.settings.voice = true; sayVox(t); S.settings.voice = v; } else speak(t, true); });
       break;
     }
-    case 'test-sound': { ac(); bell('soft', true); const was = S.settings.binaural; S.settings.binaural = true; setBin(7); setTimeout(() => { setBin(null); S.settings.binaural = was; }, 6000); toast('Six secondes de son binaural'); break; }
+    case 'test-sound': {
+      ac(); audioSession();
+      if (AMB_MODE() === 'none') { toast('Fond sonore réglé sur « Aucun »'); break; }
+      setBin(7); clearTimeout(window.__ambT); window.__ambT = setTimeout(() => { if (!P.on) ambStop(); }, 10000);
+      toast('Dix secondes de fond sonore, règle le volume pendant ce temps'); break;
+    }
+    case 'amb': { S.settings.amb = el.dataset.v; save(); binLevel(); if (S.settings.amb === 'none') ambStop(); render(); break; }
     case 'day': { const n = Math.max(1, todaysDay() + +el.dataset.d); S.program.day = n; S.program.last = null; save(); render(); break; }
     case 'export': {
       const copy = JSON.parse(JSON.stringify(S)); delete copy.settings.elKey;
