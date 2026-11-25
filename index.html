@@ -1030,7 +1030,7 @@ const CATS = [
   ['Image mentale', ['image']],
   ['Visualisation', ['endormi', 'objectif', 'corps', 'journee', 'futur', 'bulle', 'ancre']],
   ['Le soir', ['revue', 'revision']],
-  ['Recentrage', ['energie', 'sprint']]
+  ['Travail', ['sprint']]
 ];
 
 /* ---------- planification des consignes ---------- */
@@ -1679,11 +1679,10 @@ const VIEWS = {
       ${doneToday ? `<p class="small ok" style="margin-bottom:0">Faite aujourd'hui. Demain, jour ${S.program.day}.</p>` : ''}
     </section>
     ${d.intention ? `<section class="card"><div class="eyebrow">Intention du jour</div><p style="font-family:'Cormorant Garamond',Georgia,serif;font-size:22px;line-height:1.3;margin:6px 0">${esc(d.intention)}</p>${d.when ? `<p class="small dim" style="margin:0">${esc(d.when)}</p>` : ''}</section>` : ''}
-    <section class="grid2" style="margin-bottom:0">
-      <button class="tile sos" data-act="sos">${IC.bolt}<div><b>Je décroche</b><br><span>Ennui, procrastination, dispersion : trois minutes pour revenir.</span></div></button>
+    <section class="grid2">
+      <button class="tile sos" data-act="sos">${IC.bolt}<div><b>Je décroche</b><br><span>Ennui, procrastination, dispersion, envie trop forte : quelques minutes pour revenir.</span></div></button>
       <button class="tile" data-act="ex" data-id="sprint">${IC.timer}<div><b>Sprint</b><br><span>Un bloc chronométré sur une seule tâche.</span></div></button>
     </section>
-    <button class="tile" data-act="energie" style="width:100%;min-height:0;margin-top:12px;flex-direction:row;align-items:center;gap:14px">${IC.flame}<div style="flex:1"><b>Canaliser l'énergie</b><br><span>Une envie forte : la faire redescendre, puis la mettre sur une action.</span></div></button>
     <section class="card">
       <div class="between"><div><div class="eyebrow">Diète mentale</div><h3 style="margin-top:2px">Défi des 7 jours · ${Math.min(ds, 7)}/7</h3></div><button class="btn sm ghost" data-act="diet-info">?</button></div>
       ${d.watch ? `<p class="small muted" style="margin:6px 0 0">Aujourd'hui, tu surveilles : <span class="acc">${esc(d.watch.toLowerCase())}</span> <button class="btn sm ghost" data-act="watch-reset" style="padding:2px 6px">changer</button></p>`
