@@ -158,16 +158,21 @@ nav.tabs svg{width:22px;height:22px}
 .p-btn svg{width:20px;height:20px}
 .p-title{flex:1;text-align:center;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.45)}
 .p-count{min-width:44px;text-align:right;color:rgba(255,220,180,.55);font-variant-numeric:tabular-nums;font-size:15px}
-.p-cue{position:absolute;left:0;right:0;bottom:calc(118px + env(safe-area-inset-bottom));padding:0 26px;text-align:center;pointer-events:none;z-index:2}
+.p-cue{position:absolute;left:0;right:0;bottom:calc(158px + env(safe-area-inset-bottom));padding:0 26px;text-align:center;pointer-events:none;z-index:2}
 .p-cue div{font-family:"Cormorant Garamond",Georgia,serif;font-size:25px;line-height:1.3;color:rgba(255,238,215,.93);max-width:520px;margin:0 auto;text-shadow:0 2px 18px #000;transition:opacity .9s;opacity:0}
 .p-cue div.on{opacity:1}
 .p-bot{position:absolute;left:0;right:0;bottom:0;padding:0 20px calc(18px + env(safe-area-inset-bottom));z-index:2;transition:opacity .6s}
-.p-bar{height:2px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;margin:0 auto 14px;max-width:520px}
-.p-bar i{display:block;height:100%;width:0;background:rgba(255,178,74,.75)}
-.p-ctl{display:flex;justify-content:center;gap:18px;align-items:center}
+.p-scrub{max-width:520px;margin:0 auto;padding:14px 0;cursor:pointer;touch-action:none}
+.p-track{position:relative;height:4px;border-radius:4px;background:rgba(255,255,255,.14)}
+.p-track i{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:4px;background:rgba(255,178,74,.9)}
+.p-track b{position:absolute;left:0;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;background:#ffc27a;box-shadow:0 0 0 5px rgba(255,178,74,.18)}
+.p-track span i{position:absolute;top:-3px;width:2px;height:10px;margin-left:-1px;border-radius:1px;background:rgba(255,255,255,.3)}
+.p-scrub.drag .p-track b{transform:scale(1.25)}
+.p-times{max-width:520px;margin:-4px auto 10px;display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,.5);font-variant-numeric:tabular-nums}
+.p-ctl{display:flex;justify-content:center;gap:26px;align-items:center}
 .p-ctl .p-btn{width:52px;height:52px}
+.p-ctl .p-jump{width:60px;font-size:13px;font-weight:600;color:rgba(255,255,255,.85)}
 .p-form .back{align-self:flex-start;margin:0 0 16px}
-.p-time{font-size:12px;color:rgba(255,255,255,.4);font-variant-numeric:tabular-nums;min-width:56px;text-align:center}
 #player.idle .p-top,#player.idle .p-bot{opacity:.5}
 #player.idle.form .p-top{opacity:1}
 .p-form{position:absolute;inset:0;z-index:3;background:radial-gradient(600px 400px at 50% 0%,#1d1409 0%,rgba(0,0,0,0) 70%),#05060a;display:none;overflow:auto}
@@ -210,12 +215,12 @@ nav.tabs svg{width:22px;height:22px}
   </div>
   <div class="p-cue"><div id="pCue"></div></div>
   <div class="p-bot">
-    <div class="p-bar"><i id="pBar"></i></div>
+    <div class="p-scrub" id="pScrub"><div class="p-track" id="pTrack"><span id="pTicks"></span><i id="pBar"></i><b id="pThumb"></b></div></div>
+    <div class="p-times"><span id="pTime">0:00</span><span id="pTotal">0:00</span></div>
     <div class="p-ctl">
-      <div class="p-time" id="pTime">0:00</div>
-      <button class="p-btn" id="pPrev" aria-label="Revenir en arrière"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 5.5v13l-9-6.5zM8 5H5.5v14H8z"/></svg></button>
+      <button class="p-btn p-jump" id="pBack15" aria-label="Reculer de 15 secondes">−15 s</button>
       <button class="p-btn" id="pPause" aria-label="Pause"></button>
-      <button class="p-btn" id="pSkip" aria-label="Passer"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 5.5v13l9-6.5zM16 5h2.5v14H16z"/></svg></button>
+      <button class="p-btn p-jump" id="pFwd15" aria-label="Avancer de 15 secondes">+15 s</button>
     </div>
   </div>
   <div class="p-form" id="pForm"></div>
@@ -232,6 +237,7 @@ const params = new URLSearchParams(location.search);
 const SPEED = Math.max(1, +params.get('speed') || 1);
 const KEY = 'focus-mental-v1';
 const pad = n => String(n).padStart(2, '0');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dkey = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -319,28 +325,51 @@ function bell(kind = 'soft', force) {
   ring(0);
   if (kind === 'end') { ring(2.4); ring(4.8); }
 }
+let bed = null, NB = null;
+function noiseBuf(c) {
+  if (NB) return NB;
+  const len = c.sampleRate * 6, buf = c.createBuffer(2, len, c.sampleRate), F = 4000;
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch); let last = 0;
+    for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5; }
+    for (let i = 0; i < F; i++) { d[i] *= i / F; d[len - 1 - i] *= i / F; }
+  }
+  return (NB = buf);
+}
+const BIN_G = () => 0.18 * S.settings.binVol, BED_G = () => 0.22 * S.settings.binVol;
 function setBin(hz) {
   const c = ac(); if (!c) return;
   const want = hz && S.settings.binaural;
-  const vol = 0.06 * S.settings.binVol;
   if (!want) {
     if (bin) { const b = bin; b.g.gain.setTargetAtTime(0, c.currentTime, 0.7); setTimeout(() => { try { b.l.stop(); b.r.stop(); } catch (e) {} }, 4000); bin = null; }
+    if (bed) { const n = bed; n.g.gain.setTargetAtTime(0, c.currentTime, 0.7); setTimeout(() => { try { n.s.stop(); } catch (e) {} }, 4000); bed = null; }
     return;
   }
-  const car = 200;
+  const car = 180;
   if (!bin) {
     const l = c.createOscillator(), r = c.createOscillator(), m = c.createChannelMerger(2), g = c.createGain();
     l.frequency.value = car - hz / 2; r.frequency.value = car + hz / 2;
     l.connect(m, 0, 0); r.connect(m, 0, 1);
     g.gain.value = 0; m.connect(g).connect(master); l.start(); r.start();
-    g.gain.setTargetAtTime(vol, c.currentTime, 1.5);
+    g.gain.setTargetAtTime(BIN_G(), c.currentTime, 1.2);
     bin = { l, r, g, hz };
   } else if (bin.hz !== hz) {
     bin.l.frequency.setTargetAtTime(car - hz / 2, c.currentTime, 3);
     bin.r.frequency.setTargetAtTime(car + hz / 2, c.currentTime, 3);
-    bin.g.gain.setTargetAtTime(vol, c.currentTime, 0.5);
     bin.hz = hz;
   }
+  if (!bed) {
+    const src = c.createBufferSource(); src.buffer = noiseBuf(c); src.loop = true;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700;
+    const g = c.createGain(); g.gain.value = 0; src.connect(lp).connect(g).connect(master); src.start();
+    g.gain.setTargetAtTime(BED_G(), c.currentTime, 1.5);
+    bed = { s: src, g };
+  }
+}
+function binLevel() {
+  if (!AC) return;
+  if (bin) bin.g.gain.setTargetAtTime(BIN_G(), AC.currentTime, 0.15);
+  if (bed) bed.g.gain.setTargetAtTime(BED_G(), AC.currentTime, 0.15);
 }
 function setNoise(on) {
   const c = ac(); if (!c) return;
@@ -349,13 +378,7 @@ function setNoise(on) {
     return;
   }
   if (noise) return;
-  const len = c.sampleRate * 6, buf = c.createBuffer(2, len, c.sampleRate), F = 4000;
-  for (let ch = 0; ch < 2; ch++) {
-    const d = buf.getChannelData(ch); let last = 0;
-    for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5; }
-    for (let i = 0; i < F; i++) { d[i] *= i / F; d[len - 1 - i] *= i / F; }
-  }
-  const s = c.createBufferSource(); s.buffer = buf; s.loop = true;
+  const s = c.createBufferSource(); s.buffer = noiseBuf(c); s.loop = true;
   const g = c.createGain(); g.gain.value = 0; s.connect(g).connect(master); s.start();
   g.gain.setTargetAtTime(0.5 * S.settings.binVol, c.currentTime, 1);
   noise = { s, g };
@@ -429,7 +452,7 @@ async function loadClip(t) {
     const buf = await new Promise((res, rej) => c.decodeAudioData(ab.slice(0), res, rej));
     VOX.buf.set(h, buf); VOX.dur.set(h, buf.duration);
     return buf;
-  } catch (e) { return null; }
+  } catch (e) { const m = String(e && e.message || e); VOX.err = /40[13]/.test(m) ? 'clé refusée par ElevenLabs' : /429|quota/i.test(m) ? 'crédits ElevenLabs épuisés' : /fetch|network|Load failed/i.test(m) ? 'pas de connexion' : m; return null; }
 }
 function spokenOf(steps) {
   const out = [];
@@ -1009,25 +1032,122 @@ async function startSession(sess) {
   if (S.settings.voice && SPEED === 1) {
     const f = $('#pForm');
     f.innerHTML = `<div class="pf" style="text-align:center"><div class="eyebrow">${esc(sess.title)}</div><h2>Préparation de la voix</h2><p class="muted" id="voxProg">…</p><button class="btn" style="margin:18px auto 0" id="prepCancel">Annuler</button></div>`;
-    f.classList.add('form'); $('#prepCancel').onclick = closePlayer;
+    $('#player').classList.add('form'); $('#prepCancel').onclick = closePlayer;
     f.classList.add('on');
     await voxReady;
     await Promise.race([prefetch(sess.steps, (d, n) => { const el = $('#voxProg'); if (el) el.textContent = `${d} / ${n}`; }), new Promise(r => setTimeout(r, canGenerate() ? 30000 : 15000))]);
     if (!P.on || P.token !== token) return;
+    const perso = spokenOf(sess.steps).filter(t => VOX.idx && !(VOX.idx.clips && VOX.idx.clips[vhash(t)] != null) && !VOX.buf.has(vhash(t)));
+    if (perso.length && VOX.idx && VOX.idx.provider === 'elevenlabs') { if (!(await keyPrompt(perso, token))) return; }
   }
   $('#pForm').classList.remove('on'); $('#pForm').innerHTML = '';
   P.total = estimate(sess.steps);
   bell('soft');
   if (!S.seen.casque && S.settings.binaural) { S.seen.casque = true; save(); toast('Casque ou écouteurs conseillés'); }
+  P.listen = 0; P.lastTick = 0;
   clearInterval(P.tick); P.tick = setInterval(tick, 200);
   next();
 }
+// Frise de la séance : début et durée de chaque étape (les questions durent 0).
+function timeline() {
+  const steps = P.sess.steps, starts = [], durs = []; let t = 0;
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i], active = !s.when || s.when(P.res);
+    const d = !active || s.type ? 0 : (i === P.i && P.step === s ? P.dur : sched(s).dur);
+    starts.push(t); durs.push(d); t += d;
+  }
+  return { starts, durs, total: t };
+}
+function drawTicks() {
+  const tl = P.tl; if (!tl || !tl.total) { $('#pTicks').innerHTML = ''; $('#pTotal').textContent = '0:00'; return; }
+  $('#pTicks').innerHTML = tl.starts.map((st, i) => tl.durs[i] > 0 && st > 0 ? `<i style="left:${(st / tl.total * 100).toFixed(2)}%"></i>` : '').join('');
+  $('#pTotal').textContent = mmss(tl.total);
+}
+function enterStep(i, off) {
+  const steps = P.sess.steps, s = P.step = steps[i];
+  P.i = i; P.taps = 0; P.seeked = off > 0; showCue('');
+  $('#pTitle').textContent = s.title || P.sess.title;
+  $('#pCount').textContent = s.count ? '0' : '';
+  if (s.type) { P.tl = timeline(); drawTicks(); showForm(s); return; }
+  $('#pForm').classList.remove('on'); $('#player').classList.remove('form');
+  const sc = sched(s); P.cues = sc.cues; P.dur = sc.dur; P.lastPh = -1; P.ci = 0;
+  if (off > 0) {
+    while (P.ci < P.cues.length && P.cues[P.ci].at < off - 1.5) P.ci++;
+    const prev = P.cues[P.ci - 1]; if (prev) showCue(prev.t);
+  }
+  P.stepStart = clock() - off * 1000 / SPEED; P.lastTick = performance.now();
+  if (s.sound === 'bruit brun') setNoise(true); else setNoise(false);
+  setBin(s.sound === 'binaural' ? 16 : s.vis === 'sprint' ? null : (s.bin || 10));
+  if (!off && i > 0 && s.bell !== false && (s.bell || steps[i - 1].vis === 'dark' || steps[i - 1].type)) bell('soft');
+  P.tl = timeline(); drawTicks(); hud(off);
+}
+// Aller à un moment précis de la séance (barre à glisser, −15 s, +15 s).
+function seekTo(T) {
+  if (!P.on || !P.step) return;
+  if (P.paused) togglePause();
+  const tl = P.tl = timeline(), steps = P.sess.steps;
+  T = Math.max(0, T);
+  if (T >= tl.total - 0.5) {
+    // au bout de la partie écoutée : on passe directement à la suite (question ou bilan)
+    let L = -1; for (let i = steps.length - 1; i >= 0; i--) if (tl.durs[i] > 0) { L = i; break; }
+    if (L < 0) return;
+    stopVox(); poke();
+    P.hist = [];
+    for (let i = 0; i <= L; i++) if (tl.durs[i] > 0 || (steps[i].type && (!steps[i].when || steps[i].when(P.res)))) P.hist.push({ i, planned: tl.durs[i], secs: 0, rec: false, ins: 0 });
+    if (P.i > L) return;
+    P.step = null; P.i = L; next(); return;
+  }
+  let k = -1;
+  for (let i = 0; i < steps.length; i++) if (tl.durs[i] > 0 && T >= tl.starts[i] && T < tl.starts[i] + tl.durs[i]) { k = i; break; }
+  if (k < 0) return;
+  stopVox(); poke();
+  P.hist = [];
+  for (let i = 0; i < k; i++) if (tl.durs[i] > 0 || (steps[i].type && (!steps[i].when || steps[i].when(P.res)))) P.hist.push({ i, planned: tl.durs[i], secs: 0, rec: false, ins: 0 });
+  enterStep(k, T - tl.starts[k]);
+}
+function position() { return P.tl && P.step ? P.tl.starts[P.i] + (P.step.type ? 0 : Math.min(stepTime(), P.dur)) : 0; }
 function closeStep() {
   const s = P.step; if (!s || s.type) return;
   const st = Math.min(stepTime(), P.dur);
   P.res.secs += st; P.doneDur += P.dur;
-  if (s.kind) P.res.steps.push({ kind: s.kind, lvl: s.lvl, gid: s.gid, dur: st, planned: P.dur, taps: P.taps, done: st >= P.dur - 0.5 });
+  if (s.kind) P.res.steps.push({ kind: s.kind, lvl: s.lvl, gid: s.gid, dur: st, planned: P.dur, taps: P.taps, done: st >= P.dur - 0.5 && !P.seeked });
   P.hist.push({ i: P.i, planned: P.dur, secs: st, rec: !!s.kind, ins: 0 });
+}
+function keyPrompt(perso, token) {
+  return new Promise(done => {
+    const f = $('#pForm'); f.classList.add('on'); $('#player').classList.add('form');
+    const n = perso.length, pl = n > 1 ? 's' : '';
+    const draw = msg => {
+      const has = !!S.settings.elKey;
+      f.innerHTML = `<div class="pf"><div class="eyebrow">${esc(P.sess.title)}</div>
+        <h2>${has ? "Damien n'a pas pu lire tes phrases" : 'Tes phrases personnelles'}</h2>
+        <p class="muted">${has
+          ? `${n} phrase${pl} de ta Vision n'${n > 1 ? 'ont' : 'a'} pas pu être préparée${pl}${VOX.err ? ' : ' + esc(VOX.err) : ''}. Elle${pl} s'afficher${n > 1 ? 'ont' : 'a'} à l'écran.`
+          : `Damien ne peut lire ${n > 1 ? `les ${n} phrases que tu as écrites` : 'la phrase que tu as écrite'} dans Vision qu'avec ta clé ElevenLabs. Copie la clé depuis ton message (elle commence par sk_), puis appuie sur « Coller ma clé ».`}</p>
+        ${msg ? `<div class="tip">${esc(msg)}</div>` : ''}
+        ${has ? '<button class="btn pri block" style="margin-top:16px" id="kRetry">Réessayer</button>' : '<button class="btn pri block" style="margin-top:16px" id="kPaste">Coller ma clé</button><input class="in" id="kIn" autocomplete="off" placeholder="ou colle-la ici" style="margin-top:10px">'}
+        <button class="btn block" style="margin-top:10px" id="kGo">Continuer${has ? '' : ' sans la clé'}</button></div>`;
+      $('#kGo').onclick = () => done(true);
+      const tryKey = async raw => {
+        const m = String(raw || '').match(/sk_[A-Za-z0-9]+/);
+        if (!m) { draw("Ce n'est pas une clé ElevenLabs : elle commence par sk_."); return; }
+        S.settings.elKey = m[0]; save(); await generate();
+      };
+      if ($('#kPaste')) $('#kPaste').onclick = () => (navigator.clipboard && navigator.clipboard.readText ? navigator.clipboard.readText() : Promise.reject())
+        .then(tryKey).catch(() => draw('Le téléphone refuse la lecture du presse-papiers : colle la clé dans le champ ci-dessous.'));
+      if ($('#kIn')) $('#kIn').oninput = e => { if (/sk_[A-Za-z0-9]{20,}/.test(e.target.value)) tryKey(e.target.value); };
+      if ($('#kRetry')) $('#kRetry').onclick = generate;
+    };
+    const generate = async () => {
+      VOX.err = '';
+      f.innerHTML = `<div class="pf" style="text-align:center"><div class="eyebrow">${esc(P.sess.title)}</div><h2>Damien prépare tes phrases</h2><p class="muted" id="kProg">0 / ${n}</p></div>`;
+      await prefetch(perso.map(t => ({ cues: [{ t }] })), (d) => { const el = $('#kProg'); if (el) el.textContent = `${d} / ${n}`; });
+      if (!P.on || P.token !== token) return done(false);
+      if (perso.every(t => VOX.buf.has(vhash(t)))) { toast('Tes phrases seront lues par Damien'); done(true); }
+      else draw('');
+    };
+    draw('');
+  });
 }
 function restartStep() {
   stopVox(); showCue('');
@@ -1044,10 +1164,8 @@ function goBack() {
   if (!h) { restartStep(); return; }
   P.doneDur -= h.planned; P.res.secs -= h.secs;
   if (h.rec) P.res.steps.pop();
-  if (h.ins) P.sess.steps.splice(h.i + 1, h.ins);
-  P.total = estimate(P.sess.steps);
-  P.step = null; P.i = h.i - 1;
-  next();
+  P.step = null;
+  enterStep(h.i, 0);
 }
 function next() {
   closeStep();
@@ -1055,20 +1173,13 @@ function next() {
   P.i++;
   while (P.i < steps.length && steps[P.i].when && !steps[P.i].when(P.res)) P.i++;
   if (P.i >= steps.length) return finish(false);
-  const s = P.step = steps[P.i];
-  P.taps = 0; showCue('');
-  $('#pTitle').textContent = s.title || P.sess.title;
-  $('#pCount').textContent = s.count ? '0' : '';
-  if (s.type) { showForm(s); return; }
-  $('#pForm').classList.remove('on'); $('#player').classList.remove('form');
-  const sc = sched(s); P.cues = sc.cues; P.ci = 0; P.dur = sc.dur; P.lastPh = -1;
-  P.stepStart = clock();
-  if (s.sound === 'bruit brun') setNoise(true); else setNoise(false);
-  setBin(s.sound === 'binaural' ? 16 : (s.bin || null));
-  if (P.i > 0 && s.bell !== false && (s.bell || steps[P.i - 1].vis === 'dark' || steps[P.i - 1].type)) bell('soft');
+  enterStep(P.i, 0);
 }
 function tick() {
   if (!P.on || P.paused || !P.step || P.step.type) return;
+  const now = performance.now();
+  if (P.lastTick) P.listen += Math.min(1, (now - P.lastTick) / 1000) * SPEED;
+  P.lastTick = now;
   const st = stepTime();
   while (P.ci < P.cues.length && P.cues[P.ci].at <= st) {
     const c = P.cues[P.ci++];
@@ -1080,10 +1191,15 @@ function tick() {
   if (st >= P.dur) next();
 }
 function hud(st) {
-  const prog = Math.min(1, (P.doneDur + Math.min(st, P.dur)) / Math.max(P.total, 1));
-  $('#pBar').style.width = (prog * 100).toFixed(1) + '%';
-  $('#pTime').textContent = mmss(P.doneDur + Math.min(st, P.dur));
+  if (SCRUB.on || !P.tl) return;
+  showPos(P.tl.starts[P.i] + Math.min(st, P.dur));
 }
+function showPos(T) {
+  const tot = Math.max(P.tl ? P.tl.total : 1, 1), pc = (Math.min(1, Math.max(0, T / tot)) * 100).toFixed(2) + '%';
+  $('#pBar').style.width = pc; $('#pThumb').style.left = pc;
+  $('#pTime').textContent = mmss(T);
+}
+const SCRUB = { on: false };
 let cueT = 0;
 function showCue(t) {
   const el = $('#pCue');
@@ -1109,7 +1225,7 @@ function breathTick(st) {
 }
 function finish(aborted) {
   if (aborted) closeStep();
-  const res = P.res, secs = Math.round(res.secs), msgs = [];
+  const res = P.res, secs = Math.round(P.listen || res.secs), msgs = [];
   let focusTaps = 0, focusSecs = 0;
   for (const s of res.steps) if (['point', 'flame', 'count', 'pursuit', 'sospoint'].includes(s.kind)) { focusTaps += s.taps; focusSecs += s.dur; }
   if (!aborted || secs >= 60) {
@@ -1185,7 +1301,7 @@ function togglePause() {
     if (AC) AC.suspend();
     $('#pPause').innerHTML = ICON_PLAY; showCue('En pause');
   } else {
-    P.pauseTotal += performance.now() - P.pausedAt; P.paused = false;
+    P.pauseTotal += performance.now() - P.pausedAt; P.paused = false; P.lastTick = performance.now();
     if (HAS_TTS) speechSynthesis.resume();
     if (AC) AC.resume();
     $('#pPause').innerHTML = ICON_PAUSE; showCue('');
@@ -1218,11 +1334,12 @@ function showForm(s) {
     if (s.key) P.res.inputs[s.key] = v;
     if (s.kind === 'image') P.res.steps.push({ kind: 'image', lvl: s.lvl, val: v, dur: 0, taps: 0, done: true });
     const ins = s.save ? s.save(v, P.res) : null;
+    if (s._ins) { P.sess.steps.splice(P.i + 1, s._ins); s._ins = 0; }
     if (Array.isArray(ins)) {
-      P.sess.steps.splice(P.i + 1, 0, ...ins); P.total = estimate(P.sess.steps);
+      P.sess.steps.splice(P.i + 1, 0, ...ins); s._ins = ins.length; P.total = estimate(P.sess.steps);
       prefetch(ins);
     }
-    P.hist.push({ i: P.i, planned: 0, secs: 0, rec: s.kind === 'image', ins: Array.isArray(ins) ? ins.length : 0 });
+    P.hist.push({ i: P.i, planned: 0, secs: 0, rec: s.kind === 'image', ins: 0 });
     next();
   };
   if (s.type === 'input') {
@@ -1246,12 +1363,24 @@ CV.addEventListener('pointerdown', e => {
 });
 $('#player').addEventListener('pointerdown', poke);
 $('#pPause').onclick = togglePause;
-$('#pSkip').onclick = () => { if (P.on && P.step && !P.step.type) { if (P.paused) togglePause(); stopVox(); next(); } };
-$('#pPrev').onclick = goBack;
+$('#pBack15').onclick = () => { if (P.on && P.step && !P.step.type) seekTo(position() - 15); };
+$('#pFwd15').onclick = () => { if (P.on && P.step && !P.step.type) seekTo(position() + 15); };
+(() => {
+  const el = $('#pScrub'), at = x => { const r = $('#pTrack').getBoundingClientRect(); return Math.min(1, Math.max(0, (x - r.left) / r.width)) * (P.tl ? P.tl.total : 0); };
+  el.addEventListener('pointerdown', e => {
+    if (!P.on || !P.step || P.step.type || !P.tl) return;
+    SCRUB.on = true; el.classList.add('drag'); try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    showPos(at(e.clientX)); poke(); e.preventDefault();
+  });
+  el.addEventListener('pointermove', e => { if (SCRUB.on) { showPos(at(e.clientX)); poke(); } });
+  const end = e => { if (!SCRUB.on) return; SCRUB.on = false; el.classList.remove('drag'); seekTo(at(e.clientX)); };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', () => { SCRUB.on = false; el.classList.remove('drag'); });
+})();
 function quitSession() {
   if (!P.on) return;
   if (!P.step) { closePlayer(); return; }
-  if (P.res.secs < 1 && !P.hist.length) { closePlayer(); return; }
+  if ((P.listen || 0) < 1 && !P.hist.length) { closePlayer(); return; }
   const el = (performance.now() - P.t0) / 1000;
   if (el > 20 && !confirm('Arrêter la séance ?')) return;
   if (P.paused) togglePause();
@@ -1983,7 +2112,7 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.path) { setPath(t.dataset.path, t.value); saveSoon(); return; }
   if (t.dataset.set === 'rate') { S.settings.rate = +t.value; $('#rateV').textContent = rateLabel(+t.value); saveSoon(); }
-  if (t.dataset.set === 'binVol') { S.settings.binVol = +t.value; saveSoon(); }
+  if (t.dataset.set === 'binVol') { S.settings.binVol = +t.value; binLevel(); saveSoon(); }
 });
 document.addEventListener('change', e => {
   const t = e.target;
