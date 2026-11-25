@@ -13,6 +13,6 @@ Les données restent dans le navigateur du téléphone (export possible dans Ré
 2. « Add file », « Upload files », déposer les 7 fichiers de ce dossier, puis « Commit changes ».
 3. Settings, Pages : Source « Deploy from a branch », branche `main`, dossier `/ (root)`, Save.
 4. Une à deux minutes plus tard, l'appli est à l'adresse `https://<compte>.github.io/Focus/`.
-5. Sur iPhone, l'ouvrir dans Safari, bouton Partager, « Sur l'écran d'accueil ».
+5. Sur Android (Samsung), l'ouvrir dans Chrome, menu ⋮, « Ajouter à l'écran d'accueil » ou « Installer l'application ».
 
 Pour une mise à jour, remplacer `index.html` dans le dépôt : l'appli installée la récupère à l'ouverture suivante.

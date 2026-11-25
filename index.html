@@ -406,6 +406,7 @@ async function idbSet(k, v) { try { const db = await idb(); db.transaction('clip
 const canGenerate = () => !!(S.settings.elKey && VOX.idx && VOX.idx.provider === 'elevenlabs' && VOX.idx.voice_id);
 async function genPersonal(text) {
   const I = VOX.idx;
+  const m = String(S.settings.elKey || '').match(/sk_[A-Za-z0-9]+/); if (m) S.settings.elKey = m[0];
   const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${I.voice_id}?output_format=mp3_44100_64`, {
     method: 'POST', headers: { 'xi-api-key': S.settings.elKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
     body: JSON.stringify(Object.assign({ text: (I.prefix || '') + vnorm(text), model_id: I.model }, I.settings ? { voice_settings: I.settings } : {})) });
@@ -1498,7 +1499,7 @@ const VIEWS = {
         <li>Remplis l'onglet Vision : tes objectifs, le corps que tu construis, la vie que tu veux. Les visualisations s'en servent et te les lisent.</li>
         <li>Prends un casque ou des écouteurs, surtout pour les séances les yeux fermés.</li>
         <li>La séance du jour suit un programme de 42 jours en six étapes. Les exercices s'allongent à mesure que ta concentration progresse.</li>
-        <li>Installe l'appli sur ton écran d'accueil : sur iPhone, bouton Partager puis « Sur l'écran d'accueil ».</li>
+        <li>Installe l'appli sur ton écran d'accueil : dans Chrome, menu ⋮ puis « Ajouter à l'écran d'accueil » ou « Installer l'application ».</li>
       </ol>
       <div class="row" style="margin-top:12px"><button class="btn sm pri" data-act="goto" data-t="vision">Remplir ma vision</button><button class="btn sm ghost" data-act="welcome-ok">Plus tard</button></div>
     </section>`}
@@ -1663,11 +1664,13 @@ const VIEWS = {
       <div class="set" style="display:block"><div class="l"><b>Voix du guide</b><span>${VOX.idx ? esc(VOX.idx.label || 'Voix enregistrée') : 'Les enregistrements ne sont pas encore installés : la voix du téléphone prend le relais.'}</span></div>
         <div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="btn sm" data-act="test-voice">Écouter</button>${VOX.idx ? '<button class="btn sm" data-act="vox-offline">Télécharger pour le hors connexion</button>' : ''}</div></div>
       <div class="set" style="display:block"><div class="l"><b>Tes phrases personnelles</b><span>Ce que tu écris dans Vision (objectifs, corps, vie choisie) ne peut pas être enregistré à l'avance. Avec une clé ElevenLabs, l'appli le fait lire par la même voix et le garde sur le téléphone. Sans clé, c'est la voix du téléphone qui lit ces phrases. La clé reste sur ce téléphone et ne part pas dans les exports. Crée-en une réservée à la synthèse vocale.</span></div>
-        <input class="in" type="password" autocomplete="off" data-set="elKey" placeholder="Clé API ElevenLabs" value="${esc(st.elKey)}" style="margin-top:10px"></div>
+        <input class="in" type="password" autocomplete="off" data-set="elKey" placeholder="Clé API ElevenLabs" value="${esc(st.elKey)}" style="margin-top:10px">
+        <div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="btn sm" data-act="key-paste">Coller ma clé</button>${st.elKey ? '<button class="btn sm pri" data-act="perso-prep">Faire lire mes phrases par Damien</button>' : ''}</div>
+        <p class="small dim" id="persoState" style="margin-bottom:0">${st.elKey ? 'Clé enregistrée sur ce téléphone.' : ''}</p></div>
       ${sw('ttsFallback', 'Voix du téléphone en secours', 'Pour les phrases qui n\'ont pas d\'enregistrement.')}
       ${HAS_TTS ? `<div class="set" style="display:block"><div class="l"><b>Voix de secours</b></div>
         <select class="in" data-set="voiceURI" style="margin-top:8px">${VOICE ? '' : '<option value="" selected>Aucune voix d\'homme trouvée : texte à l\'écran seulement</option>'}${vs.map(v => `<option value="${esc(v.voiceURI)}" ${VOICE && VOICE.voiceURI === v.voiceURI ? 'selected' : ''}>${esc(v.name)} (${esc(v.lang)})${isMale(v) ? '' : ' · voix de femme ?'}</option>`).join('')}</select>
-        <p class="small dim" style="margin-bottom:0">Par défaut, seule une voix d'homme du téléphone est utilisée (Thomas sur iPhone). Si aucune n'est installée, tes phrases s'affichent à l'écran sans être lues.</p></div>` : ''}
+        <p class="small dim" style="margin-bottom:0">Par défaut, seule une voix d'homme du téléphone est utilisée. Sur un Samsung, les voix de synthèse se règlent dans Paramètres, Gestion générale, Synthèse vocale. Si aucune voix d'homme n'est trouvée, tes phrases s'affichent à l'écran sans être lues : la clé ElevenLabs ci-dessus règle la question.</p></div>` : ''}
       ${sw('text', 'Afficher les consignes', 'Le texte apparaît aussi à l\'écran pendant la séance.')}
     </section>
     <section class="card">
@@ -1676,7 +1679,7 @@ const VIEWS = {
       ${sw('binaural', 'Battements binauraux', 'Avec un casque : un son légèrement différent dans chaque oreille, utilisé dans les séances les yeux fermés. Les études sur leur effet sont partagées ; beaucoup s\'en servent surtout comme repère pour entrer dans la séance.')}
       <div class="set" style="display:block"><div class="between"><b>Volume du fond sonore</b></div><input type="range" min="0.1" max="1" step="0.05" value="${st.binVol}" data-set="binVol"></div>
       <div class="set"><button class="btn sm" data-act="test-sound">Tester (casque)</button></div>
-      <p class="small dim" style="margin-bottom:0">Sur un iPhone ancien (avant iOS 17), coupe le mode silencieux pour entendre les sons et la voix.</p>
+      <p class="small dim" style="margin-bottom:0">Le son suit le volume « média » du téléphone. Si tu n'entends rien, monte-le pendant la séance.</p>
     </section>
     <section class="card">
       <h3>Flamme</h3>
@@ -1695,7 +1698,7 @@ const VIEWS = {
     </section>
     <section class="card">
       <h3>Installer sur le téléphone</h3>
-      <p class="small muted">iPhone : ouvre la page dans Safari, bouton Partager, puis « Sur l'écran d'accueil ». Android : menu ⋮ de Chrome, puis « Installer l'application ». L'appli s'ouvre alors en plein écran, comme une appli normale.</p>
+      <p class="small muted">Sur ton Samsung, ouvre l'adresse dans Chrome, menu ⋮ en haut à droite, puis « Ajouter à l'écran d'accueil » (ou « Installer l'application »). Avec Samsung Internet : menu ☰, « Ajouter la page à », puis « Écran d'accueil ». L'appli s'ouvre alors en plein écran, comme une appli normale.</p>
     </section>
     <section class="card">
       <h3>D'où viennent les exercices</h3>
@@ -1901,6 +1904,40 @@ document.addEventListener('click', e => {
       const y = window.scrollY; render(); window.scrollTo(0, y); toast('Commentaire enregistré'); break;
     }
     case 'vision-save': { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); clearTimeout(saveT); S.savedAt = hhmm(); save(); const el = $('#saveState'); if (el) el.textContent = 'Enregistrée à ' + S.savedAt; toast('Vision enregistrée'); break; }
+    case 'key-paste': {
+      (navigator.clipboard && navigator.clipboard.readText ? navigator.clipboard.readText() : Promise.reject())
+        .then(t => {
+          const k = (t || '').trim().match(/sk_[A-Za-z0-9]+/);
+          if (!k) { toast("Pas de clé ElevenLabs dans le presse-papiers (elle commence par sk_)"); return; }
+          S.settings.elKey = k[0]; save(); render(); toast('Clé enregistrée sur ce téléphone');
+        })
+        .catch(() => toast('Colle la clé à la main dans le champ, le téléphone refuse la lecture du presse-papiers'));
+      break;
+    }
+    case 'perso-prep': {
+      ac();
+      const st = $('#persoState');
+      voxReady.then(async () => {
+        if (!canGenerate()) { if (st) st.textContent = "La voix du guide n'est pas encore installée."; return; }
+        const steps = [];
+        for (let n = 1; n <= 46; n++) steps.push(...dailySession(n).steps);
+        for (const id in EX) { try { steps.push(...EX[id].build({ min: 2, goal: (S.goals[0] || {}).id })); } catch (e) {} }
+        for (const g of S.goals) steps.push(...objectifSteps(g), ...objectifSteps(g, { short: true }));
+        steps.push(...energieSteps(), ...reviewSteps());
+        const list = spokenOf(steps).filter(t => !(VOX.idx.clips && VOX.idx.clips[vhash(t)] != null));
+        if (!list.length) { if (st) st.textContent = 'Rien à préparer : remplis d\'abord Vision.'; return; }
+        try { await genPersonal('Ton objectif.'); } catch (e) {
+          if (st) st.textContent = /401|403/.test(String(e)) ? 'Clé refusée par ElevenLabs. Vérifie-la ou crée-en une nouvelle.' : 'ElevenLabs ne répond pas. Réessaie avec une connexion.';
+          return;
+        }
+        let done = 0, ok = 0;
+        const q = list.slice();
+        const w = async () => { while (q.length) { const b = await loadClip(q.shift()); done++; if (b) ok++; if (st) st.textContent = `Préparation : ${done} / ${list.length}`; } };
+        await Promise.all(Array.from({ length: 3 }, w));
+        if (st) st.textContent = `${ok} phrase${ok > 1 ? 's' : ''} personnelle${ok > 1 ? 's' : ''} lue${ok > 1 ? 's' : ''} par Damien, gardée${ok > 1 ? 's' : ''} sur ce téléphone.${ok < list.length ? ` ${list.length - ok} en échec, elles seront retentées en séance.` : ''}`;
+      });
+      break;
+    }
     case 'vox-offline': {
       ac(); toast('Téléchargement des voix…');
       voxReady.then(async () => {
@@ -1961,7 +1998,7 @@ document.addEventListener('change', e => {
   const k = t.dataset.set; if (!k) return;
   if (t.type === 'checkbox') S.settings[k] = t.checked;
   else if (k === 'voiceURI') { S.settings.voiceURI = t.value; pickVoice(); }
-  else if (k === 'elKey') { S.settings.elKey = t.value.trim(); toast(S.settings.elKey ? 'Clé enregistrée sur ce téléphone' : 'Clé retirée'); }
+  else if (k === 'elKey') { const m = t.value.match(/sk_[A-Za-z0-9]+/); S.settings.elKey = m ? m[0] : t.value.trim(); save(); render(); toast(S.settings.elKey ? 'Clé enregistrée sur ce téléphone' : 'Clé retirée'); }
   save();
 });
 
