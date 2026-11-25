@@ -268,6 +268,7 @@ const DEF = () => ({
   drifts: [],
   journal: [],
   events: [],
+  exDur: {},
   energy: []
 });
 function merge(a, b) {
@@ -596,27 +597,30 @@ function breath(id, min) {
     { vis: 'breath', title: b.name, ph: b.ph, dur: Math.round(min * 60), bin: b.bin, kind: 'breath', bell: false }
   ];
 }
+// Durée libre : elle ne compte pour le palier que si elle atteint au moins la durée du palier.
+const lvlFor = (k, L, dur, base) => (dur ? (dur >= base ? L : -1) : L);
 function pointSteps(o = {}) {
-  const lvl = o.lvl || S.levels.point, dur = o.dur || POINT[lvl - 1];
+  const L = S.levels.point, lvl = o.lvl != null ? o.lvl : lvlFor('point', L, o.dur, POINT[L - 1]), dur = o.dur || POINT[L - 1];
   const cues = o.brief
     ? ["Le point. Touche l'écran chaque fois que ton esprit part, puis reviens."]
     : ['Le point. Pose ton regard sur le point, sans le fixer durement. Respire normalement.',
        "Chaque fois que tu t'aperçois que ton esprit est parti, touche l'écran et reviens au point."];
   return [{ vis: 'point', title: 'Le point', kind: o.kind || 'point', lvl, dur, tap: true, count: true, lead: 0.5, cues: cues.map(t => ({ t, p: 1 })) }];
 }
-function countSteps() {
+function countSteps(o = {}) {
   const lvl = S.levels.point;
-  return [{ vis: 'dark', title: 'Comptage', kind: 'count', lvl, dur: POINT[lvl - 1], tap: true, count: true, cues: [
+  return [{ vis: 'dark', title: 'Comptage', kind: 'count', lvl, dur: o.dur || POINT[lvl - 1], tap: true, count: true, cues: [
     { t: 'Ferme les yeux ou baisse le regard. Compte chaque expiration, de un à dix, puis recommence à un.', p: 1 },
     { t: "Si tu perds le compte ou si tu dépasses dix, touche l'écran et reprends à un.", p: 1 }] }];
 }
-function pursuitSteps() {
+function pursuitSteps(o = {}) {
   const lvl = S.levels.point;
-  return [{ vis: 'pursuit', title: 'Poursuite', kind: 'pursuit', lvl, dur: Math.max(60, POINT[lvl - 1]), tap: true, count: true, cues: [
+  return [{ vis: 'pursuit', title: 'Poursuite', kind: 'pursuit', lvl, dur: o.dur || Math.max(60, POINT[lvl - 1]), tap: true, count: true, cues: [
     { t: 'Suis le point des yeux, sans bouger la tête.', p: 1 }, { t: "Quand ton esprit part ailleurs, touche l'écran.", p: 1 }] }];
 }
-function flameSteps() {
-  const lvl = S.levels.flame, open = FLAME[lvl - 1], closed = Math.max(20, Math.round(open * 0.6)), cycles = lvl <= 2 ? 2 : 3;
+function flameSteps(o = {}) {
+  const L = S.levels.flame, open = FLAME[L - 1], closed = Math.max(20, Math.round(open * 0.6)), base = L <= 2 ? 2 : 3;
+  const cycles = o.min ? Math.max(1, Math.round((o.min * 60 - 40) / (open + closed))) : base, lvl = cycles >= base ? L : -1;
   const real = S.settings.realCandle;
   const steps = [{ vis: real ? 'dark' : 'flame', title: 'La flamme', cues: real
     ? [{ t: 'La flamme. Place ta bougie à un bras de distance, la flamme à hauteur des yeux, dans une pièce sombre.', p: 2 },
@@ -931,6 +935,7 @@ function dailySession(n) {
     }
   }
   add('Intention du jour', intentionSteps());
+  if (S.settings.dailyMin) { const f = fitFactor(parts.flatMap(p => p.steps), S.settings.dailyMin * 60); parts.forEach(p => { p.steps = applyFit(p.steps, f); }); }
   parts[0].steps.unshift({ vis: 'orb', title: `Jour ${n}`, cues: [{ t: `Jour ${n}. ${st.name}.`, s: `${st.name}.`, p: 1 }], tail: 0.5, bell: false });
   return {
     title: 'Séance du jour', type: 'daily', day: n, parts, steps: parts.flatMap(p => p.steps),
@@ -957,63 +962,63 @@ const IC = {
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 8l9-4 9 4-9 4zM3 8v8l9 4 9-4V8M12 12v8"/></svg>'
 };
 const EX = {
-  coherence: { n: 'Cohérence cardiaque', ic: 'breath', s: 'Six respirations par minute.', opt: 'min', mins: [2, 3, 5, 10], def: 3,
+  coherence: { n: 'Cohérence cardiaque', ic: 'breath', s: 'Six respirations par minute.', opt: 'min', mins: [1, 2, 3, 5, 10, 15, 20], def: 3,
     info: "Six respirations par minute pendant quelques minutes. Le rythme cardiaque se cale sur la respiration et la tension retombe. Bon départ avant une séance, une tâche exigeante ou un rendez-vous difficile.",
     build: o => breath('coherence', o.min) },
-  soupir: { n: 'Soupir physiologique', ic: 'breath', s: 'Le moyen le plus rapide de faire baisser la tension.', opt: 'min', mins: [1, 2, 5], def: 2,
+  soupir: { n: 'Soupir physiologique', ic: 'breath', s: 'Le moyen le plus rapide de faire baisser la tension.', opt: 'min', mins: [1, 2, 3, 5, 10, 15, 20], def: 2,
     info: "Deux inspirations par le nez, puis une longue expiration par la bouche. Dans une étude de Stanford publiée en 2023 (Balban et al., Cell Reports Medicine), cinq minutes par jour de ce « soupir cyclique » amélioraient davantage l'humeur qu'une méditation de même durée.",
     build: o => breath('soupir', o.min) },
-  carre: { n: 'Respiration carrée', ic: 'breath', s: 'Quatre temps, quatre phases.', opt: 'min', mins: [2, 3, 5], def: 3,
+  carre: { n: 'Respiration carrée', ic: 'breath', s: 'Quatre temps, quatre phases.', opt: 'min', mins: [1, 2, 3, 5, 10, 15, 20], def: 3,
     info: "Inspirer, retenir, expirer, rester à vide, quatre temps chacun. Plus exigeante que la cohérence cardiaque, elle occupe l'esprit et coupe vite une agitation.",
     build: o => breath('carre', o.min) },
-  resonance: { n: 'Résonance', ic: 'breath', s: 'Un « mmm » grave qui fait vibrer le corps.', opt: 'min', mins: [2, 3, 5], def: 2,
+  resonance: { n: 'Résonance', ic: 'breath', s: 'Un « mmm » grave qui fait vibrer le corps.', opt: 'min', mins: [1, 2, 3, 5, 10, 15, 20], def: 2,
     info: "On expire en faisant vibrer un « mmm » grave, bouche fermée. La vibration occupe l'attention et calme. Adapté de l'accord par résonance des enregistrements Gateway de l'institut Monroe.",
     build: o => breath('resonance', o.min) },
   boite: { n: 'La boîte', ic: 'box', s: 'Ranger ce qui encombre la tête avant de commencer.',
     info: "Avant une séance ou une tâche, tu déposes tes préoccupations dans une boîte imaginaire et tu la refermes. Elles ne disparaissent pas, elles attendent. Adapté de la boîte de conversion des enregistrements Gateway de l'institut Monroe.",
-    build: () => boiteSteps() },
+    build: o => fit(boiteSteps(), o.dur) },
   point: { n: 'Le point', ic: 'point', s: 'Tenir le regard et l\'esprit sur un point.', opt: 'level', lk: 'point',
     info: "Tu gardes le regard et l'esprit sur un point et tu touches l'écran à chaque décrochage. Le nombre de décrochages par minute mesure tes progrès. Trois séances réussies font passer au palier suivant, de 1 à 20 minutes.",
-    build: () => pointSteps() },
+    build: o => pointSteps(o.dur && o.dur !== 'auto' ? { dur: o.dur * 60 } : {}) },
   flamme: { n: 'La flamme', ic: 'flame', s: 'Fixer la flamme, garder son image les yeux fermés.', opt: 'level', lk: 'flame',
     info: "Le trataka du yoga : tu fixes une flamme, puis tu gardes son image les yeux fermés, et tu recommences. C'est l'exercice le plus direct pour apprendre à tenir une image intérieure. Possible avec une vraie bougie (Réglages). À éviter en cas d'épilepsie ou d'yeux irrités.",
-    build: () => flameSteps() },
+    build: o => flameSteps(o.dur && o.dur !== 'auto' ? { min: o.dur } : {}) },
   comptage: { n: 'Comptage', ic: 'point', s: 'Compter ses expirations de 1 à 10.',
     info: "Compter ses expirations de un à dix, et repartir à un dès qu'on perd le fil. Simple en apparence, très révélateur. La durée suit ton palier du point.",
-    build: () => countSteps() },
+    build: o => countSteps(o.dur && o.dur !== 'auto' ? { dur: o.dur * 60 } : {}) },
   poursuite: { n: 'Poursuite', ic: 'eye', s: 'Suivre des yeux un point qui bouge lentement.',
     info: "Suivre des yeux un point qui se déplace lentement. Utile quand l'esprit est trop agité pour tenir un point fixe.",
-    build: () => pursuitSteps() },
+    build: o => pursuitSteps(o.dur && o.dur !== 'auto' ? { dur: o.dur * 60 } : {}) },
   image: { n: 'Image mentale', ic: 'eye', s: 'Construire une image nette, de la forme à la scène.', opt: 'level', lk: 'image',
     info: "Apprendre à former une image nette. D'abord une forme simple que tu regardes puis reconstruis les yeux fermés, ensuite un objet avec tous les sens, une pièce, une scène vivante. C'est la base de toutes les visualisations. Une netteté de 7 sur 10, trois fois, fait passer au palier suivant.",
-    build: () => imageSteps() },
+    build: o => fit(imageSteps(), o.dur) },
   endormi: { n: 'Corps endormi, esprit éveillé', ic: 'moon', s: 'Décompte de 10 à 1, le corps dort, l\'esprit veille.',
     info: "Un décompte de dix à un où le corps s'endort pendant que l'esprit reste éveillé. C'est l'état de départ des visualisations profondes, l'équivalent du « Focus 10 » de l'institut Monroe.",
-    build: () => endormiSteps() },
+    build: o => fit(endormiSteps(), o.dur) },
   objectif: { n: 'Objectif atteint', ic: 'star', s: 'Vivre la scène finale, puis regarder l\'obstacle.', opt: 'goal',
     info: "Tu vis la scène qui prouve que l'objectif est atteint, par tes propres yeux, avec le ressenti. Puis tu reviens au présent et tu regardes l'obstacle en face, avec un plan « si… alors… ». Les travaux de Gabriele Oettingen montrent que rêver seulement l'objectif peut faire baisser l'énergie pour l'atteindre, alors que le confronter à l'obstacle donne de meilleurs résultats.",
-    build: o => objectifSteps(S.goals.find(g => g.id === o.goal) || null) },
+    build: o => fit(objectifSteps(S.goals.find(g => g.id === o.goal) || null), o.dur) },
   corps: { n: 'Le corps', ic: 'body', s: 'Détente, lumière, et le corps que tu construis.',
     info: "Le corps se détend, une lumière chaude le parcourt des pieds à la tête, puis tu le vois tel que tu le construis : plus fort, plus souple, plein d'énergie. Utile pour la motivation et la récupération. Ça accompagne un traitement, ça ne le remplace pas.",
-    build: () => corpsSteps() },
+    build: o => fit(corpsSteps(), o.dur) },
   journee: { n: 'Journée idéale', ic: 'star', s: 'Une journée de la vie que tu as choisie.',
     info: "Une journée ordinaire de la vie que tu as choisie, du réveil au soir, avec tes propres détails (onglet Vision). Plus tu remplis, plus la séance te ressemble.",
-    build: () => journeeSteps() },
+    build: o => fit(journeeSteps(), o.dur) },
   futur: { n: 'Futur soi', ic: 'star', s: 'Rencontre avec toi dans cinq ans.',
     info: "Tu rencontres celui que tu seras dans cinq ans et tu lui demandes ce qui a compté et ce qu'il faut arrêter. Les travaux de Hal Hershfield montrent qu'on décide mieux pour le long terme quand ce futur soi paraît proche et concret.",
-    build: () => futurSteps() },
+    build: o => fit(futurSteps(), o.dur) },
   bulle: { n: 'La bulle', ic: 'moon', s: 'Une limite claire autour de toi.',
     info: "Une enveloppe d'énergie se construit autour de toi à chaque respiration. Elle sert de limite : rien ne te distrait sans ton accord. Adapté du ballon d'énergie des enregistrements Gateway de l'institut Monroe.",
-    build: () => bulleSteps() },
+    build: o => fit(bulleSteps(), o.dur) },
   ancre: { n: "L'ancre", ic: 'bolt', s: 'Un geste pour retrouver ta concentration.',
     info: "Tu retrouves un moment de concentration totale et tu l'associes à un geste, pouce contre index. Ce geste sert ensuite à revenir vite à cet état quand tu décroches. Fais-le plusieurs fois la première semaine.",
-    build: () => ancreSteps() },
+    build: o => fit(ancreSteps(), o.dur) },
   revue: { n: 'Revue du soir', ic: 'moon', s: 'Bilan, diète mentale, révision.',
     info: "Le bilan du soir : ta concentration, la diète mentale, ce qui a marché, ta dérive principale, puis la révision d'un moment de la journée. Ta réponse à la dernière question devient l'intention de demain.",
     build: () => reviewSteps(), type: 'review' },
   revision: { n: 'Révision', ic: 'eye', s: 'Rejouer un moment de la journée comme tu l\'aurais voulu.',
     info: "Neville Goddard appelait ça la révision : rejouer le soir un moment de la journée tel que tu l'aurais voulu, au présent et en détail, pour que ce soit cette version qui te vienne la prochaine fois.",
-    build: () => revisionSteps() },
+    build: o => fit(revisionSteps(), o.dur) },
   energie: { n: "Canaliser l'énergie", ic: 'flame', s: 'Transformer une envie forte en action.',
     info: "Quand l'envie sexuelle est forte, tu l'observes sans la nourrir jusqu'à ce qu'elle redescende, tu la fais monter le long de la colonne avec la respiration, tu bouges une minute si tu peux, puis tu la mets sur une action précise, avec un sprint. Napoleon Hill consacre un chapitre de Réfléchissez et devenez riche (1937) à cette « transmutation » du désir en énergie de travail, et le taoïsme a un exercice proche, l'orbite microcosmique. L'observation de l'envie vient de l'« urge surfing », utilisé en addictologie : une envie qu'on ne nourrit pas monte, plafonne, puis retombe. L'appli note l'intensité avant et après pour que tu le voies sur tes propres chiffres.",
     build: () => energieSteps(), type: 'energie' },
@@ -1023,6 +1028,12 @@ const EX = {
   sprint: { n: 'Sprint de travail', ic: 'timer', s: 'Un bloc chronométré sur une seule tâche.', opt: 'sprint',
     info: "Un bloc de travail chronométré sur une seule tâche. Chaque envie de décrocher se note d'un toucher sur l'écran, sans la suivre. Le compte te montre où partent tes envies.",
     build: o => sprintSteps(o.min, o.task, o.sound), type: 'sprint' }
+};
+const DURS = {
+  point: ['auto', 1, 2, 3, 5, 10, 15, 20, 30], comptage: ['auto', 1, 2, 3, 5, 10, 15, 20, 30], poursuite: ['auto', 1, 2, 3, 5, 10, 15, 20],
+  flamme: ['auto', 3, 5, 10, 15, 20], image: ['auto', 3, 5, 8, 10],
+  boite: ['auto', 2, 3, 5, 10], endormi: ['auto', 5, 10, 15, 20, 30], objectif: ['auto', 3, 5, 10, 15, 20, 30], corps: ['auto', 5, 10, 15, 20, 30],
+  journee: ['auto', 3, 5, 10, 15, 20], futur: ['auto', 3, 5, 10, 15, 20], bulle: ['auto', 2, 3, 5, 10], ancre: ['auto', 3, 5, 10], revision: ['auto', 2, 3, 5, 10, 15]
 };
 const CATS = [
   ['Respirer et se poser', ['coherence', 'soupir', 'carre', 'resonance', 'boite']],
@@ -1045,6 +1056,32 @@ function sched(step) {
   return { cues, dur: step.dur ?? (cur + (step.tail ?? 4)) };
 }
 const estimate = steps => steps.reduce((a, s) => a + (s.type ? 15 : sched(s).dur), 0);
+// Pour atteindre une durée voulue : on allonge ou on raccourcit les silences (pauses de 2 s et plus)
+// et les respirations ; la parole et les exercices de concentration à leur palier ne bougent pas.
+function fitFactor(steps, target) {
+  let fixed = 0, flex = 0;
+  for (const s of steps) {
+    if (s.type) { fixed += 15; continue; }
+    if (s.kind === 'breath') { flex += s.dur; continue; }
+    if (s.dur != null) { fixed += s.dur; continue; }
+    const tot = sched(s).dur; let pz = 0;
+    for (const c of s.cues || []) { const q = c.p ?? 3; if (q >= 2) pz += q; }
+    const tl = s.tail ?? 4; if (tl >= 2) pz += tl;
+    flex += pz; fixed += tot - pz;
+  }
+  return flex > 0 ? clamp((target - fixed) / flex, 0.3, 10) : 1;
+}
+function applyFit(steps, f) {
+  if (Math.abs(f - 1) < 0.01) return steps;
+  return steps.map(s => {
+    if (s.type) return s;
+    if (s.kind === 'breath') return Object.assign({}, s, { dur: Math.max(30, Math.round(s.dur * f)) });
+    if (s.dur != null) return s;
+    const tl = s.tail ?? 4;
+    return Object.assign({}, s, { cues: (s.cues || []).map(c => ((c.p ?? 3) >= 2 ? Object.assign({}, c, { p: (c.p ?? 3) * f }) : c)), tail: tl >= 2 ? tl * f : tl });
+  });
+}
+const fit = (steps, min) => (min && min !== 'auto' ? applyFit(steps, fitFactor(steps, min * 60)) : steps);
 
 /* ---------- lecteur ---------- */
 const P = { on: false };
@@ -1675,6 +1712,7 @@ const VIEWS = {
       <h2 style="margin-top:4px">${esc(st.name)}</h2>
       <p class="muted small">${esc(st.desc)}</p>
       <ul class="parts">${sess.parts.map(p => `<li><span>${esc(p.n)}</span><span class="dim">${minLabel(estimate(p.steps))}</span></li>`).join('')}</ul>
+      <div class="chips" style="margin:-6px 0 14px"><span class="small dim" style="align-self:center;margin-right:2px">Durée</span>${['auto', 10, 15, 20, 30].map(v => `<button class="chip ${String(S.settings.dailyMin || 'auto') === String(v) ? 'on' : ''}" data-act="daily-min" data-v="${v}">${v === 'auto' ? 'Auto' : v + ' min'}</button>`).join('')}</div>
       <button class="btn pri block" data-act="daily">${doneToday ? 'Refaire la séance' : 'Commencer'} · ${minLabel(estimate(sess.steps))}</button>
       ${doneToday ? `<p class="small ok" style="margin-bottom:0">Faite aujourd'hui. Demain, jour ${S.program.day}.</p>` : ''}
     </section>
@@ -1938,9 +1976,10 @@ function journalHtml() {
   return out + (dates.length > JLIM ? `<button class="btn sm block" style="margin-top:12px" data-act="journal-more">Voir les jours précédents (${dates.length - JLIM})</button>` : '');
 }
 function exDur(id) {
-  const e = EX[id];
-  if (e.opt === 'min') return `${e.def} min`;
-  if (e.opt === 'sprint') return '10 à 60 min';
+  const e = EX[id], saved = S.exDur[id];
+  if (e.opt === 'min') return `${saved || e.def} min`;
+  if (e.opt === 'sprint') return saved ? `${saved} min` : '10 à 60 min';
+  if (DURS[id] && saved != null && saved !== 'auto') { try { return minLabel(estimate(e.build({ min: e.def, goal: null, dur: saved }))); } catch (err) { return `${saved} min`; } }
   if (id === 'sos') return '3 min';
   if (id === 'energie') return '6 min';
   try { return minLabel(estimate(e.build({ min: e.def, goal: null }))); } catch (err) { return ''; }
@@ -1974,8 +2013,9 @@ function setPath(p, v) { const ks = p.split('.'); let o = S; for (let i = 0; i <
 const SH = { opts: {} };
 function exSheet(id) {
   const e = EX[id];
-  SH.id = id; SH.opts = { min: e.def, goal: (S.goals.find(g => !g.done) || {}).id || null, task: '', sound: 'vagues' };
-  if (id === 'sprint') SH.opts.min = 25;
+  const saved = S.exDur[id];
+  SH.id = id; SH.opts = { min: e.opt === 'min' && saved ? saved : e.def, dur: DURS[id] && saved != null ? saved : 'auto', goal: (S.goals.find(g => !g.done) || {}).id || null, task: '', sound: 'vagues' };
+  if (id === 'sprint') SH.opts.min = saved || 25;
   renderExSheet();
 }
 function renderExSheet() {
@@ -1991,6 +2031,11 @@ function renderExSheet() {
     const gs = S.goals.filter(g => !g.done);
     opts = gs.length ? `<label class="f">Objectif</label><div class="chips">${gs.map(g => `<button class="chip ${o.goal === g.id ? 'on' : ''}" data-act="opt" data-k="goal" data-v="${g.id}">${esc(g.title)}</button>`).join('')}</div>`
       : '<p class="small tip">Tu n\'as pas encore d\'objectif dans l\'onglet Vision. La séance fonctionne quand même, avec des questions ouvertes.</p>';
+  }
+  if (DURS[id]) {
+    const autoMin = minLabel(estimate(e.build(Object.assign({}, o, { dur: 'auto' }))));
+    opts += `<label class="f">Durée</label><div class="chips">${DURS[id].map(m => `<button class="chip ${String(o.dur) === String(m) ? 'on' : ''}" data-act="opt" data-k="dur" data-v="${m}">${m === 'auto' ? (e.opt === 'level' ? 'Selon le palier · ' : 'Normale · ') + autoMin : m + ' min'}</button>`).join('')}</div>
+      ${e.opt === 'level' && o.dur !== 'auto' && id !== 'image' ? '<p class="small dim">Une durée plus courte que ton palier ne compte pas pour le faire monter.</p>' : ''}${e.opt !== 'level' && o.dur !== 'auto' ? '<p class="small dim">La voix dit les mêmes phrases ; ce sont les silences entre elles qui s\'allongent ou raccourcissent.</p>' : ''}`;
   }
   if (e.opt === 'sprint') {
     opts = `<label class="f">Durée</label><div class="chips">${[10, 25, 45, 60].map(m => `<button class="chip ${o.min === m ? 'on' : ''}" data-act="opt" data-k="min" data-v="${m}">${m} min</button>`).join('')}</div>
@@ -2037,11 +2082,12 @@ document.addEventListener('click', e => {
       if (el.dataset.id === 'revue') { startSession({ title: 'Revue du soir', type: 'review', steps: reviewSteps() }); break; }
       exSheet(el.dataset.id); break;
     }
-    case 'opt': { const k = el.dataset.k; let v = el.dataset.v; if (k === 'min') v = +v; if (k === 'sprint' || SH.id === 'sprint') { const t = $('#sprintTask'); if (t) SH.opts.task = t.value; } SH.opts[k] = v; renderExSheet(); break; }
+    case 'opt': { const k = el.dataset.k; let v = el.dataset.v; if (k === 'min' || (k === 'dur' && v !== 'auto')) v = +v; if (k === 'sprint' || SH.id === 'sprint') { const t = $('#sprintTask'); if (t) SH.opts.task = t.value; } SH.opts[k] = v; renderExSheet(); break; }
     case 'lvl': { const k = el.dataset.k; const L = Math.min(MAXL[k], Math.max(1, S.levels[k] + +el.dataset.d)); if (L !== S.levels[k]) { S.levels[k] = L; S.wins[k] = 0; save(); } renderExSheet(); break; }
     case 'ex-start': {
       const e2 = EX[SH.id];
       if (SH.id === 'sprint') SH.opts.task = ($('#sprintTask') || {}).value || '';
+      S.exDur[SH.id] = e2.opt === 'min' || SH.id === 'sprint' ? SH.opts.min : SH.opts.dur; save();
       startSession({ title: e2.n, type: e2.type || 'exo', steps: e2.build(SH.opts) });
       break;
     }
@@ -2056,6 +2102,7 @@ document.addEventListener('click', e => {
       <p class="muted">Le soir, tu indiques si la journée est tenue. Si tu t'es laissé aller à ruminer longtemps, elle est lâchée et le défi repart de zéro. Fox était strict là-dessus, c'est ce qui fait la force de l'exercice.</p>
       <button class="btn block" style="margin-top:12px" data-act="close-sheet">Compris</button>`); break;
     case 'close-sheet': closeSheet(); break;
+    case 'daily-min': S.settings.dailyMin = el.dataset.v === 'auto' ? null : +el.dataset.v; save(); render(); break;
     case 'journal-more': JLIM += 14; render(); break;
     case 'note-edit': {
       const k = el.dataset.d;
