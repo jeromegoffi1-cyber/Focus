@@ -1250,7 +1250,7 @@ function keyPrompt(perso, token) {
         <h2>${has ? "Tes phrases n'ont pas pu être lues" : 'Tes phrases personnelles'}</h2>
         <p class="muted">${has
           ? `${n} phrase${pl} de ta Vision n'${n > 1 ? 'ont' : 'a'} pas pu être préparée${pl}${VOX.err ? ' : ' + esc(VOX.err) : ''}. Elle${pl} s'afficher${n > 1 ? 'ont' : 'a'} à l'écran.`
-          : `Damien ne peut lire ${n > 1 ? `les ${n} phrases que tu as écrites` : 'la phrase que tu as écrite'} dans Vision qu'avec ta clé ElevenLabs. Copie la clé depuis ton message (elle commence par sk_), puis appuie sur « Coller ma clé ».`}</p>
+          : `La voix du guide ne peut lire ${n > 1 ? `les ${n} phrases que tu as écrites` : 'la phrase que tu as écrite'} dans Vision qu'avec ta clé ElevenLabs. Copie la clé depuis ton message (elle commence par sk_), puis appuie sur « Coller ma clé ».`}</p>
         ${msg ? `<div class="tip">${esc(msg)}</div>` : ''}
         ${has ? '<button class="btn pri block" style="margin-top:16px" id="kRetry">Réessayer</button>' : '<button class="btn pri block" style="margin-top:16px" id="kPaste">Coller ma clé</button><input class="in" id="kIn" autocomplete="off" placeholder="ou colle-la ici" style="margin-top:10px">'}
         <button class="btn block" style="margin-top:10px" id="kGo">Continuer${has ? '' : ' sans la clé'}</button></div>`;
@@ -1267,10 +1267,10 @@ function keyPrompt(perso, token) {
     };
     const generate = async () => {
       VOX.err = '';
-      f.innerHTML = `<div class="pf" style="text-align:center"><div class="eyebrow">${esc(P.sess.title)}</div><h2>Damien prépare tes phrases</h2><p class="muted" id="kProg">0 / ${n}</p></div>`;
+      f.innerHTML = `<div class="pf" style="text-align:center"><div class="eyebrow">${esc(P.sess.title)}</div><h2>La voix du guide prépare tes phrases</h2><p class="muted" id="kProg">0 / ${n}</p></div>`;
       await prefetch(perso.map(t => ({ cues: [{ t }] })), (d) => { const el = $('#kProg'); if (el) el.textContent = `${d} / ${n}`; });
       if (!P.on || P.token !== token) return done(false);
-      if (perso.every(t => VOX.buf.has(vhash(t)))) { toast('Tes phrases seront lues par Damien'); done(true); }
+      if (perso.every(t => VOX.buf.has(vhash(t)))) { toast('Tes phrases seront lues par la voix du guide'); done(true); }
       else draw('');
     };
     draw('');
@@ -1921,7 +1921,7 @@ const VIEWS = {
         <div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="btn sm" data-act="test-voice">Écouter</button>${VOX.idx ? '<button class="btn sm" data-act="vox-offline">Télécharger pour le hors connexion</button>' : ''}</div></div>
       <div class="set" style="display:block"><div class="l"><b>Tes phrases personnelles</b><span>Ce que tu écris dans Vision (objectifs, corps, vie choisie) ne peut pas être enregistré à l'avance. Avec une clé ElevenLabs, l'appli le fait lire par la même voix et le garde sur le téléphone. Sans clé, c'est la voix du téléphone qui lit ces phrases. La clé reste sur ce téléphone et ne part pas dans les exports. Crée-en une réservée à la synthèse vocale.</span></div>
         <input class="in" type="password" autocomplete="off" data-set="elKey" placeholder="Clé API ElevenLabs" value="${esc(st.elKey)}" style="margin-top:10px">
-        <div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="btn sm" data-act="key-paste">Coller ma clé</button>${st.elKey ? '<button class="btn sm pri" data-act="perso-prep">Faire lire mes phrases par Damien</button>' : ''}</div>
+        <div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="btn sm" data-act="key-paste">Coller ma clé</button>${st.elKey ? '<button class="btn sm pri" data-act="perso-prep">Faire lire mes phrases par la voix du guide</button>' : ''}</div>
         <p class="small dim" id="persoState" style="margin-bottom:0">${st.elKey ? 'Clé enregistrée sur ce téléphone.' : ''}</p></div>
       ${sw('ttsFallback', 'Voix du téléphone en secours', 'Pour les phrases qui n\'ont pas d\'enregistrement.')}
       ${HAS_TTS ? `<div class="set" style="display:block"><div class="l"><b>Voix de secours</b></div>
@@ -2201,7 +2201,7 @@ document.addEventListener('click', e => {
         const q = list.slice();
         const w = async () => { while (q.length) { const b = await loadClip(q.shift()); done++; if (b) ok++; if (st) st.textContent = `Préparation : ${done} / ${list.length}`; } };
         await Promise.all(Array.from({ length: 3 }, w));
-        if (st) st.textContent = `${ok} phrase${ok > 1 ? 's' : ''} personnelle${ok > 1 ? 's' : ''} lue${ok > 1 ? 's' : ''} par Damien, gardée${ok > 1 ? 's' : ''} sur ce téléphone.${ok < list.length ? ` ${list.length - ok} en échec, elles seront retentées en séance.` : ''}`;
+        if (st) st.textContent = `${ok} phrase${ok > 1 ? 's' : ''} personnelle${ok > 1 ? 's' : ''} lue${ok > 1 ? 's' : ''} par la voix du guide, gardée${ok > 1 ? 's' : ''} sur ce téléphone.${ok < list.length ? ` ${list.length - ok} en échec, elles seront retentées en séance.` : ''}`;
       });
       break;
     }
