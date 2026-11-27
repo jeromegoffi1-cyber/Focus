@@ -109,6 +109,11 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 svg.chart{width:100%;height:auto;display:block;margin-top:10px;overflow:visible}
 .hbar{display:grid;grid-template-columns:118px 1fr 26px;align-items:center;gap:8px;font-size:13px;margin:7px 0}
 .hbar .t{height:8px;border-radius:8px;background:#1a202b;overflow:hidden}.hbar .t i{display:block;height:100%;background:var(--acc);border-radius:8px}
+.jtrack{height:6px;border-radius:6px;background:#1a202b;overflow:hidden;margin:10px 0 14px}.jtrack i{display:block;height:100%;background:var(--acc)}
+.stage{padding:14px;border-radius:14px;border:1px solid var(--line);background:#0b0e14;margin-top:10px}
+.stage.cur{border-color:rgba(255,178,74,.45);background:rgba(255,178,74,.05)}.stage.past{opacity:.6}
+.daydots{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.daydots span{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:12px;border:1px solid var(--line2);color:var(--dim)}
+.daydots span.ok{background:var(--acc);border-color:var(--acc);color:#1b1006;font-weight:600}.daydots span.now{box-shadow:0 0 0 2px rgba(255,178,74,.6)}
 .jday{padding:14px 0;border-bottom:1px solid var(--line)}
 .jday:last-of-type{border-bottom:0}
 .jday b{font-weight:600}
@@ -139,7 +144,7 @@ nav.tabs svg{width:22px;height:22px}
 .sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;max-height:90vh;overflow:auto;background:#0d1017;border-top:1px solid var(--line2);border-radius:24px 24px 0 0;padding:8px 18px calc(26px + env(safe-area-inset-bottom));transform:translateY(105%);visibility:hidden;transition:transform .3s cubic-bezier(.2,.8,.2,1),visibility 0s .3s}
 .sheet.on{transform:none;visibility:visible;transition:transform .3s cubic-bezier(.2,.8,.2,1)}
 .sheet .grab{width:40px;height:4px;border-radius:4px;background:var(--line2);margin:6px auto 16px}
-.sheet-top{position:sticky;top:-8px;z-index:2;display:flex;justify-content:flex-end;margin:0 -6px 4px;padding-top:6px;pointer-events:none}
+.sheet-top{position:sticky;top:-8px;z-index:2;display:flex;justify-content:flex-end;margin:0 -18px 4px;padding:6px 12px 8px;pointer-events:none;background:linear-gradient(#0d1017 70%,rgba(13,16,23,0))}
 .sheet-x{pointer-events:auto;width:38px;height:38px;border-radius:50%;background:#1a2030;border:1px solid var(--line2);font-size:15px;display:grid;place-items:center}
 .savebar{position:fixed;left:0;right:0;bottom:calc(var(--nav) + env(safe-area-inset-bottom));z-index:19;max-width:560px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;background:rgba(8,9,13,.96);border-top:1px solid var(--line);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 @media(min-width:600px){.sheet{max-width:560px;margin:0 auto}}
@@ -469,8 +474,16 @@ async function genPersonal(text) {
   const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${I.voice_id}?output_format=mp3_44100_64`, {
     method: 'POST', headers: { 'xi-api-key': S.settings.elKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
     body: JSON.stringify(Object.assign({ text: (I.prefix || '') + vnorm(text), model_id: I.model }, I.settings ? { voice_settings: I.settings } : {})) });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
+  if (!r.ok) { let st = ''; try { const j = await r.json(); st = (j.detail && (j.detail.status || j.detail.code)) || ''; } catch (e) {} throw new Error('HTTP ' + r.status + ' ' + st); }
   return r.arrayBuffer();
+}
+function voxReason(m) {
+  return /voice_disabled|voice_access_denied|voice_not_found/.test(m) ? "la voix du guide n'est plus disponible chez ElevenLabs"
+    : /quota_exceeded|insufficient/i.test(m) ? 'crédits ElevenLabs épuisés'
+    : /missing_permissions/.test(m) ? "la clé n'a pas le droit « Text to Speech »"
+    : /40[13]/.test(m) ? 'clé refusée par ElevenLabs'
+    : /429/.test(m) ? 'ElevenLabs est saturé, réessaie dans une minute'
+    : /fetch|network|Load failed/i.test(m) ? 'pas de connexion' : m;
 }
 async function loadClip(t) {
   const h = vhash(t);
@@ -488,7 +501,7 @@ async function loadClip(t) {
     const buf = await new Promise((res, rej) => c.decodeAudioData(ab.slice(0), res, rej));
     VOX.buf.set(h, buf); VOX.dur.set(h, buf.duration);
     return buf;
-  } catch (e) { const m = String(e && e.message || e); VOX.err = /40[13]/.test(m) ? 'clé refusée par ElevenLabs' : /429|quota/i.test(m) ? 'crédits ElevenLabs épuisés' : /fetch|network|Load failed/i.test(m) ? 'pas de connexion' : m; return null; }
+  } catch (e) { VOX.err = voxReason(String(e && e.message || e)); return null; }
 }
 function spokenOf(steps) {
   const out = [];
@@ -535,13 +548,13 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 /* ---------- programme ---------- */
 const STAGES = [
-  { n: 1, name: "Poser l'attention", from: 1, desc: "Respiration, point fixe, et un corps qui se relâche pendant que l'esprit reste clair." },
-  { n: 2, name: 'La flamme', from: 8, desc: "Fixer la flamme, garder son image les yeux fermés, puis les premières images mentales." },
-  { n: 3, name: "L'image intérieure", from: 15, desc: "Vider la tête, tenir le point, construire des images de plus en plus nettes." },
-  { n: 4, name: 'Les objectifs', from: 22, desc: "La flamme, puis tes objectifs vécus comme atteints, et ton plan face à l'obstacle." },
-  { n: 5, name: 'Le corps', from: 29, desc: "Corps endormi, esprit éveillé, puis le corps que tu construis." },
-  { n: 6, name: 'La vie choisie', from: 36, desc: "Ta journée idéale, ton futur soi, tes objectifs." },
-  { n: 7, name: 'Entretien', from: 43, desc: "Les séances tournent entre concentration, corps et vision. Les paliers continuent de monter." }
+  { n: 1, name: "Poser l'attention", from: 1, desc: "Respiration, point fixe, et un corps qui se relâche pendant que l'esprit reste clair." , goal: "Tenir ton attention sur un point, détendre le corps sans t'endormir, et créer le geste d'ancrage qui sert ensuite dans « Je décroche »." },
+  { n: 2, name: 'La flamme', from: 8, desc: "Fixer la flamme, garder son image les yeux fermés, puis les premières images mentales." , goal: "Tenir une image intérieure : la flamme d'abord, puis des formes simples que tu reconstruis les yeux fermés." },
+  { n: 3, name: "L'image intérieure", from: 15, desc: "Vider la tête, tenir le point, construire des images de plus en plus nettes." , goal: 'Vider la tête avant de commencer, tenir le point plus longtemps et construire des images nettes, avec tous les sens.' },
+  { n: 4, name: 'Les objectifs', from: 22, desc: "La flamme, puis tes objectifs vécus comme atteints, et ton plan face à l'obstacle." , goal: "Vivre tes objectifs comme déjà atteints, puis regarder l'obstacle en face avec un plan « si… alors… »." },
+  { n: 5, name: 'Le corps', from: 29, desc: "Corps endormi, esprit éveillé, puis le corps que tu construis." , goal: "Entrer dans l'état « corps endormi, esprit éveillé » et y travailler le corps que tu construis." },
+  { n: 6, name: 'La vie choisie', from: 36, desc: "Ta journée idéale, ton futur soi, tes objectifs." , goal: 'Tout relier : ta journée idéale, ton futur soi et tes objectifs, avec la concentration acquise.' },
+  { n: 7, name: 'Entretien', from: 43, desc: "Les séances tournent entre concentration, corps et vision. Les paliers continuent de monter.", goal: 'Les séances tournent entre tous les exercices pour garder et faire monter ce que tu as acquis.' }
 ];
 const stageOf = n => [...STAGES].reverse().find(s => n >= s.from);
 const POINT = [60, 90, 120, 180, 240, 300, 420, 600, 900, 1200];
@@ -914,28 +927,37 @@ function reviewSteps() {
 }
 
 /* ---------- séance du jour ---------- */
+// Programme : ce que contient chaque jour, étape par étape.
+const PLAN = {
+  1: n => [['Cohérence cardiaque', () => breath('coherence', 3)], ['Le point', () => pointSteps()],
+    n % 2 ? ['Corps endormi', () => endormiSteps({ short: true })] : ["L'ancre", () => ancreSteps()]],
+  2: n => [['Soupir physiologique', () => breath('soupir', 1.5)],
+    ...(n % 2 ? [] : [['Comptage', () => countSteps({ dur: Math.min(POINT[S.levels.point - 1], 120) })]]),
+    ['La flamme', () => flameSteps()], ['Image mentale', () => imageSteps()]],
+  3: n => [['La boîte', () => boiteSteps()], ['Résonance', () => breath('resonance', 2)], ['Le point', () => pointSteps()],
+    ['Image mentale', () => imageSteps()], ...(n % 2 ? [['La bulle', () => bulleSteps()]] : [])],
+  4: n => [['Cohérence cardiaque', () => breath('coherence', 2)], ['La flamme', () => flameSteps()], ['Objectif atteint', () => objectifSteps(pickGoal(n))]],
+  5: n => [['Corps endormi', () => endormiSteps({ keep: true })], ['Le corps', () => corpsSteps({ after: true })], ['Le point', () => pointSteps()]],
+  6: n => [['Soupir physiologique', () => breath('soupir', 1)], ['La flamme', () => flameSteps()],
+    n % 2 ? ['Futur soi', () => futurSteps()] : ['Journée idéale', () => journeeSteps()], ['Objectif atteint', () => objectifSteps(pickGoal(n), { short: true })]],
+  7: n => [
+    [['Cohérence cardiaque', () => breath('coherence', 2)], ['Le point', () => pointSteps()], ['Objectif atteint', () => objectifSteps(pickGoal(n))]],
+    [['Soupir physiologique', () => breath('soupir', 1)], ['La flamme', () => flameSteps()], ['Le corps', () => corpsSteps()]],
+    [['La boîte', () => boiteSteps()], ['Image mentale', () => imageSteps()], ['Journée idéale', () => journeeSteps()]],
+    [['Respiration carrée', () => breath('carre', 3)], ['Poursuite', () => pursuitSteps()], ['Futur soi', () => futurSteps()]]][n % 4]
+};
+// Durée visée : la séance s'allonge d'étape en étape (environ 9 à 20 min), et un peu chaque jour dans l'étape.
+const STAGE_MIN = [9, 11, 13, 15, 18, 20, 20];
+const planTarget = n => { const st = stageOf(n); return (STAGE_MIN[st.n - 1] + Math.min(n - st.from, 6) * 0.4) * 60; };
 function dailySession(n) {
   const st = stageOf(n), parts = [];
   const add = (name, steps) => parts.push({ n: name, steps });
   if (S.affirmation.trim()) add('Affirmation', affSteps());
-  switch (st.n) {
-    case 1: add('Cohérence cardiaque', breath('coherence', 3)); add('Le point', pointSteps()); add('Corps endormi', endormiSteps({ short: true })); break;
-    case 2: add('Soupir physiologique', breath('soupir', 1.5)); add('La flamme', flameSteps()); add('Image mentale', imageSteps()); break;
-    case 3: add('La boîte', boiteSteps()); add('Résonance', breath('resonance', 2)); add('Le point', pointSteps()); add('Image mentale', imageSteps()); break;
-    case 4: add('Cohérence cardiaque', breath('coherence', 2)); add('La flamme', flameSteps()); add('Objectif atteint', objectifSteps(pickGoal(n))); break;
-    case 5: add('Corps endormi', endormiSteps({ keep: true })); add('Le corps', corpsSteps({ after: true })); add('Le point', pointSteps()); break;
-    case 6: add('Soupir physiologique', breath('soupir', 1)); add('La flamme', flameSteps());
-      if (n % 2) add('Futur soi', futurSteps()); else add('Journée idéale', journeeSteps());
-      add('Objectif atteint', objectifSteps(pickGoal(n), { short: true })); break;
-    default: {
-      const r = n % 3;
-      if (r === 0) { add('Cohérence cardiaque', breath('coherence', 2)); add('Le point', pointSteps()); add('Objectif atteint', objectifSteps(pickGoal(n))); }
-      else if (r === 1) { add('Soupir physiologique', breath('soupir', 1)); add('La flamme', flameSteps()); add('Le corps', corpsSteps()); }
-      else { add('La boîte', boiteSteps()); add('Image mentale', imageSteps()); add('Journée idéale', journeeSteps()); }
-    }
-  }
+  for (const [name, build] of PLAN[st.n](n)) add(name, build());
   add('Intention du jour', intentionSteps());
-  if (S.settings.dailyMin) { const f = fitFactor(parts.flatMap(p => p.steps), S.settings.dailyMin * 60); parts.forEach(p => { p.steps = applyFit(p.steps, f); }); }
+  const all = parts.flatMap(p => p.steps);
+  const target = S.settings.dailyMin ? S.settings.dailyMin * 60 : Math.max(estimate(all), planTarget(n));
+  const f = fitFactor(all, target); parts.forEach(p => { p.steps = applyFit(p.steps, f); });
   parts[0].steps.unshift({ vis: 'orb', title: `Jour ${n}`, cues: [{ t: `Jour ${n}. ${st.name}.`, s: `${st.name}.`, p: 1 }], tail: 0.5, bell: false });
   return {
     title: 'Séance du jour', type: 'daily', day: n, parts, steps: parts.flatMap(p => p.steps),
@@ -945,6 +967,36 @@ function dailySession(n) {
       return out;
     }
   };
+}
+const stageEnd = st => { const nx = STAGES.find(x => x.n === st.n + 1); return nx ? nx.from - 1 : null; };
+function stageExercises(st) {
+  const names = [], end = stageEnd(st) || st.from + 3;
+  for (let d = st.from; d <= end; d++) for (const [nm] of PLAN[st.n](d)) if (!names.includes(nm)) names.push(nm);
+  return names;
+}
+function parcoursHtml() {
+  const today = todaysDay(), next = S.program.day, done = Math.min(42, next - 1), doneToday = S.program.last === dkey();
+  const lvl = k => `<div class="lv"><span>${{ point: 'Point', flame: 'Flamme', image: 'Image' }[k]}</span><b>${S.levels[k]}</b><span>${esc(levelLabel(k, S.levels[k]))}</span>${S.levels[k] < MAXL[k] ? `<span style="display:block;margin-top:4px">ensuite : ${esc(levelLabel(k, S.levels[k] + 1))}</span>` : ''}${dotsHtml(S.wins[k])}</div>`;
+  return `<h2>Ton parcours</h2>
+    <p class="muted">${done ? `${done} séance${done > 1 ? 's' : ''} du jour faite${done > 1 ? 's' : ''} sur 42.` : 'Tu commences au jour 1.'} ${doneToday ? `Aujourd'hui : jour ${today}, fait.` : `Aujourd'hui : jour ${today}.`}</p>
+    <div class="jtrack"><i style="width:${(done / 42 * 100).toFixed(1)}%"></i></div>
+    <p class="small muted">Chaque étape s'appuie sur la précédente. Le point, la flamme et l'image mentale montent de palier tout seuls après trois séances réussies : ton temps de concentration passe ainsi d'une minute à vingt. Les séances s'allongent aussi d'étape en étape, d'environ 9 à 20 minutes.</p>
+    ${STAGES.map(st => {
+      const end = stageEnd(st), cur = today >= st.from && (end == null || today <= end), past = end != null && today > end;
+      const days = end ? Array.from({ length: end - st.from + 1 }, (_, i) => st.from + i) : [];
+      return `<div class="stage ${cur ? 'cur' : ''} ${past ? 'past' : ''}">
+        <div class="between"><b>${st.n < 7 ? 'Étape ' + st.n + ' · ' : ''}${esc(st.name)}</b><span class="small ${cur ? 'acc' : 'dim'}">${past ? 'faite' : cur ? 'en cours' : end ? `jours ${st.from} à ${end}` : `après le jour 42`}</span></div>
+        <p class="small muted" style="margin:6px 0">${esc(st.goal)}</p>
+        <p class="small dim" style="margin:0">${stageExercises(st).map(esc).join(' · ')}</p>
+        ${cur && days.length ? `<div class="daydots">${days.map(d => `<span class="${d < next ? 'ok' : ''} ${d === today ? 'now' : ''}">${d}</span>`).join('')}</div>` : ''}
+      </div>`;
+    }).join('')}
+    <h3 style="margin-top:18px">Tes paliers</h3>
+    <div class="levels">${['point', 'flame', 'image'].map(lvl).join('')}</div>
+    <h3 style="margin-top:18px">Chaque jour</h3>
+    <ol class="steps"><li>Le matin, la séance du jour.</li><li>Dans la journée, « Je décroche » dès que tu décroches, et la diète mentale.</li><li>Le soir, la revue, avec la révision d'un moment de la journée.</li></ol>
+    <p class="small dim">Le jour 42 n'est pas une fin. Après, les séances d'entretien font tourner tous les exercices et les paliers continuent de monter.</p>
+    <button class="btn block" style="margin-top:12px" data-act="close-sheet">Fermer</button>`;
 }
 function todaysDay() { return S.program.last === dkey() ? S.program.day - 1 : S.program.day; }
 
@@ -1111,7 +1163,7 @@ async function startSession(sess) {
     await Promise.race([prefetch(sess.steps, (d, n) => { const el = $('#voxProg'); if (el) el.textContent = `${d} / ${n}`; }), new Promise(r => setTimeout(r, canGenerate() ? 30000 : 15000))]);
     if (!P.on || P.token !== token) return;
     const perso = spokenOf(sess.steps).filter(t => VOX.idx && !(VOX.idx.clips && VOX.idx.clips[vhash(t)] != null) && !VOX.buf.has(vhash(t)));
-    if (perso.length && VOX.idx && VOX.idx.provider === 'elevenlabs') { if (!(await keyPrompt(perso, token))) return; }
+    if (perso.length && VOX.idx && VOX.idx.provider === 'elevenlabs' && !(S.settings.elKey && S.seen.voxErrDay === dkey())) { if (!(await keyPrompt(perso, token))) return; }
   }
   $('#pForm').classList.remove('on'); $('#pForm').innerHTML = '';
   P.total = estimate(sess.steps);
@@ -1195,14 +1247,14 @@ function keyPrompt(perso, token) {
     const draw = msg => {
       const has = !!S.settings.elKey;
       f.innerHTML = `<div class="pf"><div class="eyebrow">${esc(P.sess.title)}</div>
-        <h2>${has ? "Damien n'a pas pu lire tes phrases" : 'Tes phrases personnelles'}</h2>
+        <h2>${has ? "Tes phrases n'ont pas pu être lues" : 'Tes phrases personnelles'}</h2>
         <p class="muted">${has
           ? `${n} phrase${pl} de ta Vision n'${n > 1 ? 'ont' : 'a'} pas pu être préparée${pl}${VOX.err ? ' : ' + esc(VOX.err) : ''}. Elle${pl} s'afficher${n > 1 ? 'ont' : 'a'} à l'écran.`
           : `Damien ne peut lire ${n > 1 ? `les ${n} phrases que tu as écrites` : 'la phrase que tu as écrite'} dans Vision qu'avec ta clé ElevenLabs. Copie la clé depuis ton message (elle commence par sk_), puis appuie sur « Coller ma clé ».`}</p>
         ${msg ? `<div class="tip">${esc(msg)}</div>` : ''}
         ${has ? '<button class="btn pri block" style="margin-top:16px" id="kRetry">Réessayer</button>' : '<button class="btn pri block" style="margin-top:16px" id="kPaste">Coller ma clé</button><input class="in" id="kIn" autocomplete="off" placeholder="ou colle-la ici" style="margin-top:10px">'}
         <button class="btn block" style="margin-top:10px" id="kGo">Continuer${has ? '' : ' sans la clé'}</button></div>`;
-      $('#kGo').onclick = () => done(true);
+      $('#kGo').onclick = () => { if (S.settings.elKey) { S.seen.voxErrDay = dkey(); save(); } done(true); };
       const tryKey = async raw => {
         const m = String(raw || '').match(/sk_[A-Za-z0-9]+/);
         if (!m) { draw("Ce n'est pas une clé ElevenLabs : elle commence par sk_."); return; }
@@ -1709,7 +1761,7 @@ const VIEWS = {
     </section>`}
     <section class="card hero">
       <div class="eyebrow">Séance du jour · ${dayLabel}</div>
-      <h2 style="margin-top:4px">${esc(st.name)}</h2>
+      <div class="between" style="margin-top:4px"><h2>${esc(st.name)}</h2><button class="btn sm" data-act="parcours">Parcours</button></div>
       <p class="muted small">${esc(st.desc)}</p>
       <ul class="parts">${sess.parts.map(p => `<li><span>${esc(p.n)}</span><span class="dim">${minLabel(estimate(p.steps))}</span></li>`).join('')}</ul>
       <div class="chips" style="margin:-6px 0 14px"><span class="small dim" style="align-self:center;margin-right:2px">Durée</span>${['auto', 10, 15, 20, 30].map(v => `<button class="chip ${String(S.settings.dailyMin || 'auto') === String(v) ? 'on' : ''}" data-act="daily-min" data-v="${v}">${v === 'auto' ? 'Auto' : v + ' min'}</button>`).join('')}</div>
@@ -2102,6 +2154,7 @@ document.addEventListener('click', e => {
       <p class="muted">Le soir, tu indiques si la journée est tenue. Si tu t'es laissé aller à ruminer longtemps, elle est lâchée et le défi repart de zéro. Fox était strict là-dessus, c'est ce qui fait la force de l'exercice.</p>
       <button class="btn block" style="margin-top:12px" data-act="close-sheet">Compris</button>`); break;
     case 'close-sheet': closeSheet(); break;
+    case 'parcours': openSheet(parcoursHtml()); break;
     case 'daily-min': S.settings.dailyMin = el.dataset.v === 'auto' ? null : +el.dataset.v; save(); render(); break;
     case 'journal-more': JLIM += 14; render(); break;
     case 'note-edit': {
@@ -2141,7 +2194,7 @@ document.addEventListener('click', e => {
         const list = spokenOf(steps).filter(t => !(VOX.idx.clips && VOX.idx.clips[vhash(t)] != null));
         if (!list.length) { if (st) st.textContent = 'Rien à préparer : remplis d\'abord Vision.'; return; }
         try { await genPersonal('Ton objectif.'); } catch (e) {
-          if (st) st.textContent = /401|403/.test(String(e)) ? 'Clé refusée par ElevenLabs. Vérifie-la ou crée-en une nouvelle.' : 'ElevenLabs ne répond pas. Réessaie avec une connexion.';
+          if (st) st.textContent = cap(voxReason(String(e && e.message || e))) + '.';
           return;
         }
         let done = 0, ok = 0;

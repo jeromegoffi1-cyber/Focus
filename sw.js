@@ -1,5 +1,5 @@
 // Focus : fonctionne hors connexion une fois ouvert une première fois.
-const CACHE = 'focus-v13';
+const CACHE = 'focus-v14';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './audio/index.json'];
 
 self.addEventListener('install', e => {
